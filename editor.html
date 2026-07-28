@@ -516,6 +516,7 @@
       <button class="tb-btn" id="btn-help">写作说明</button>
       <button class="tb-btn" id="btn-undo" title="撤销 (Ctrl+Z)" disabled><span class="ico">↶</span> 撤销</button>
       <button class="tb-btn" id="btn-redo" title="重做 (Ctrl+Y)" disabled><span class="ico">↷</span> 重做</button>
+      <button class="tb-btn" id="btn-new" title="新建空白作品">新建作品</button>
       <button class="tb-btn" id="btn-cheatsheet">语法速查</button>
       <button class="tb-btn" id="btn-load">打开 .lifeline</button>
       <button class="tb-btn" id="btn-save-txt">保存文本</button>
@@ -2032,6 +2033,36 @@ document.getElementById('btn-save-txt').onclick = () => {
   a.download = 'story.lifeline';
   a.click();
   URL.revokeObjectURL(url);
+};
+
+// 新建作品（空白模板）
+const NEW_SCRIPT = `@input: player_name = 请输入你的名字
+
+:: 开场
+旁白: 故事从这里开始……
+角色A: {player_name}，你好！
+? 你要怎么回应？
+  + 友好地打招呼 -> 场景A
+  + 沉默不语 -> 场景B
+
+:: 场景A
+角色A: 很高兴认识你！
+-> END
+
+:: 场景B
+角色A: ……？
+-> END
+`;
+
+document.getElementById('btn-new').onclick = () => {
+  if (editor.value.trim() && !confirm('新建作品将清除当前内容，确定吗？')) return;
+  editor.value = NEW_SCRIPT;
+  localStorage.setItem('lifeline_editor_script', NEW_SCRIPT);
+  lastSnapshot = takeSnapshot();
+  historyStack.length = 0;
+  historyIndex = -1;
+  updateUndoRedoButtons();
+  runParseAndRender();
 };
 
 // 重置样本（清除 localStorage 缓存）
