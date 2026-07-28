@@ -1,0 +1,2081 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>信号台 · Lifeline 编辑器</title>
+<style>
+  :root {
+    --bg: #0a0e0c;
+    --panel: #10160f;
+    --panel-2: #141c17;
+    --signal: #5fe0a0;
+    --signal-dim: #2a6b4d;
+    --amber: #e0a75f;
+    --danger: #d9615f;
+    --text: #c9d6cf;
+    --text-dim: #5a6b62;
+    --border: #1e2b23;
+    --mono: 'JetBrains Mono', 'SF Mono', 'Consolas', monospace;
+    --serif: 'Georgia', 'Noto Serif SC', serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--mono);
+    overflow: hidden;
+  }
+
+  .app {
+    display: grid;
+    grid-template-columns: 220px 1fr 400px;
+    grid-template-rows: 48px 1fr;
+    height: 100vh;
+  }
+
+  /* 顶部工具条 */
+  .topbar {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 16px;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel);
+  }
+  .topbar .brand {
+    font-size: 12px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--signal);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .brand .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--signal); box-shadow: 0 0 6px var(--signal); }
+  .topbar .actions { display: flex; gap: 8px; }
+  .tb-btn {
+    background: transparent;
+    border: 1px solid var(--signal-dim);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    padding: 6px 12px;
+    border-radius: 3px;
+    cursor: pointer;
+  }
+  .tb-btn:hover { border-color: var(--signal); color: var(--signal); }
+  .tb-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+  .tb-btn:disabled:hover { border-color: var(--signal-dim); color: var(--text); }
+  .tb-btn.primary { background: var(--signal-dim); border-color: var(--signal-dim); color: #0a0e0c; font-weight: 700; }
+  .tb-btn.primary:hover { background: var(--signal); color: #0a0e0c; }
+  .tb-btn .ico { display: inline-block; font-size: 13px; line-height: 1; transform: translateY(-1px); }
+
+  /* 左侧：节点导航地图 */
+  .sidebar {
+    border-right: 1px solid var(--border);
+    background: var(--panel);
+    overflow-y: auto;
+    padding: 12px 0;
+  }
+  .sidebar-title {
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    padding: 0 14px 8px;
+  }
+  .node-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 14px;
+    font-size: 12px;
+    cursor: pointer;
+    border-left: 2px solid transparent;
+    color: var(--text-dim);
+  }
+  .node-item:hover { background: var(--panel-2); color: var(--text); }
+  .node-item.active { border-left-color: var(--signal); background: var(--panel-2); color: var(--signal); }
+  .node-item .status-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+  .status-dot.ok { background: var(--signal); }
+  .status-dot.dead { background: var(--danger); }
+  .status-dot.unreachable { background: var(--amber); }
+  .node-item .node-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+  .node-item .node-exit {
+    font-size: 9px;
+    color: var(--signal-dim);
+    letter-spacing: 0.02em;
+    flex-shrink: 0;
+    text-align: right;
+    max-width: 90px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .node-item .node-branch-info {
+    font-size: 9px;
+    color: var(--amber);
+    opacity: 0.7;
+    margin-top: 2px;
+    line-height: 1.3;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .legend {
+    padding: 10px 14px;
+    font-size: 10px;
+    color: var(--text-dim);
+    border-top: 1px solid var(--border);
+    margin-top: 8px;
+    line-height: 1.8;
+  }
+  .legend .status-dot { display: inline-block; margin-right: 6px; }
+
+  /* 中间：文本编辑器 */
+  .editor-pane {
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid var(--border);
+    min-width: 0;
+  }
+  .editor-tabs {
+    display: flex;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel);
+    font-size: 11px;
+  }
+  .editor-tabs .tab {
+    padding: 8px 14px;
+    color: var(--text-dim);
+    letter-spacing: 0.05em;
+  }
+
+  /* 工具栏 */
+  .toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 6px 10px;
+    background: var(--panel-2);
+    border-bottom: 1px solid var(--border);
+  }
+  .tool-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 4px 9px;
+    border-radius: 2px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.15s;
+  }
+  .tool-btn:hover { border-color: var(--signal); color: var(--signal); background: rgba(95,224,160,0.06); }
+  .tool-btn .key {
+    color: var(--signal-dim);
+    font-size: 9px;
+    margin-left: 4px;
+  }
+
+  #script-editor {
+    flex: 1;
+    background: var(--bg);
+    color: var(--text);
+    border: none;
+    outline: none;
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.7;
+    padding: 16px 18px;
+    resize: none;
+    tab-size: 2;
+  }
+  .editor-footer {
+    border-top: 1px solid var(--border);
+    padding: 6px 14px;
+    font-size: 10px;
+    color: var(--text-dim);
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    background: var(--panel);
+    max-height: 90px;
+    overflow-y: auto;
+  }
+  .editor-footer.error { color: var(--danger); }
+  .editor-footer .issue-list { color: var(--danger); line-height: 1.5; }
+  .editor-footer .issue-list.warn { color: var(--amber); }
+
+  /* 右侧：预览 + 变量面板 */
+  .preview-pane {
+    display: flex;
+    flex-direction: column;
+    background: #050706;
+  }
+  .preview-pane.split { grid-template-rows: 1fr auto; }
+  .preview-header {
+    padding: 8px 14px;
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+  }
+  .preview-header select {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--signal);
+    font-family: var(--mono);
+    font-size: 10px;
+    padding: 3px 6px;
+    border-radius: 2px;
+    max-width: 140px;
+    text-transform: none;
+    letter-spacing: 0;
+  }
+  .preview-header select:focus { outline: none; border-color: var(--signal); }
+  .preview-header .restart-btn-sm {
+    background: var(--signal-dim);
+    color: #0a0e0c;
+    border: none;
+    font-family: var(--mono);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    padding: 3px 8px;
+    border-radius: 2px;
+    cursor: pointer;
+    text-transform: uppercase;
+  }
+  .preview-header .restart-btn-sm:hover { background: var(--signal); }
+  .preview-frame-wrap {
+    flex: 1;
+    display: flex;
+    align-items: stretch;
+    justify-content: stretch;
+    min-height: 0;
+  }
+  #preview-frame {
+    width: 100%;
+    height: 100%;
+    border: none;
+  }
+
+  /* 变量监视面板 */
+  .var-panel {
+    border-top: 2px solid var(--border);
+    background: var(--panel);
+    display: flex;
+    flex-direction: column;
+    max-height: 38%;
+    min-height: 80px;
+  }
+  .var-panel-header {
+    padding: 8px 14px;
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: var(--panel-2);
+  }
+  .var-panel-header .hint {
+    text-transform: none;
+    color: var(--text-dim);
+    opacity: 0.7;
+    letter-spacing: 0;
+    font-size: 9px;
+  }
+  .var-panel-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px 14px;
+    font-size: 11px;
+    line-height: 1.7;
+  }
+  .var-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 2px 0;
+    border-bottom: 1px dashed #1a2420;
+  }
+  .var-row:last-child { border-bottom: none; }
+  .var-name { color: var(--amber); }
+  .var-value { color: var(--signal); font-variant-numeric: tabular-nums; }
+  .var-empty { color: var(--text-dim); font-style: italic; padding: 4px 0; }
+  .var-cursor-info {
+    color: var(--signal);
+    font-size: 10px;
+    padding: 4px 0 8px;
+    border-bottom: 1px solid #1a2420;
+    margin-bottom: 6px;
+  }
+  .var-cursor-info.empty { color: var(--text-dim); }
+
+  /* 语法速查浮层 */
+  .cheatsheet {
+    position: absolute;
+    bottom: 40px;
+    left: 232px;
+    width: 340px;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 12px 14px;
+    font-size: 11px;
+    line-height: 1.9;
+    color: var(--text-dim);
+    display: none;
+    z-index: 10;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+  }
+  .cheatsheet.show { display: block; }
+  .cheatsheet code { color: var(--signal); }
+  .cheatsheet .row { display: flex; justify-content: space-between; gap: 12px; }
+
+  /* 弹窗 */
+  .modal-mask {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.6);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+  }
+  .modal-mask.show { display: flex; }
+  .modal {
+    background: var(--panel-2);
+    border: 1px solid var(--signal-dim);
+    border-radius: 4px;
+    padding: 18px 20px;
+    min-width: 340px;
+    max-width: 460px;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.7);
+  }
+  .modal h3 {
+    font-size: 12px;
+    color: var(--signal);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 12px;
+  }
+  .modal label {
+    display: block;
+    font-size: 11px;
+    color: var(--text-dim);
+    margin: 8px 0 4px;
+    letter-spacing: 0.04em;
+  }
+  .modal input, .modal select, .modal textarea {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 7px 9px;
+    border-radius: 2px;
+  }
+  .modal input:focus, .modal select:focus, .modal textarea:focus {
+    outline: none;
+    border-color: var(--signal);
+  }
+  .modal .row-2 { display: flex; gap: 8px; }
+  .modal .row-2 > * { flex: 1; }
+  .modal .actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 16px;
+  }
+  .modal .actions button {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 6px 14px;
+    border-radius: 2px;
+    cursor: pointer;
+  }
+  .modal .actions button:hover { border-color: var(--signal); color: var(--signal); }
+  .modal .actions button.primary {
+    background: var(--signal-dim);
+    border-color: var(--signal-dim);
+    color: #0a0e0c;
+    font-weight: 700;
+  }
+  .modal .actions button.primary:hover { background: var(--signal); }
+  .modal .hint {
+    font-size: 10px;
+    color: var(--text-dim);
+    margin-top: 6px;
+    line-height: 1.5;
+    opacity: 0.8;
+  }
+
+  /* 写作说明面板（长内容弹窗） */
+  .help-modal {
+    background: var(--panel-2);
+    border: 1px solid var(--signal-dim);
+    border-radius: 4px;
+    padding: 24px 28px;
+    width: 640px;
+    max-width: 92vw;
+    max-height: 86vh;
+    overflow-y: auto;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.7);
+  }
+  .help-modal h2 {
+    font-size: 14px;
+    color: var(--signal);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+  .help-modal .subtitle {
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-bottom: 18px;
+    line-height: 1.5;
+  }
+  .help-modal h3 {
+    font-size: 12px;
+    color: var(--amber);
+    letter-spacing: 0.05em;
+    margin: 18px 0 8px;
+    padding-top: 12px;
+    border-top: 1px dashed var(--border);
+  }
+  .help-modal h3:first-of-type { border-top: none; padding-top: 0; }
+  .help-modal p, .help-modal li {
+    font-size: 12px;
+    color: var(--text);
+    line-height: 1.7;
+    margin-bottom: 6px;
+  }
+  .help-modal ul { padding-left: 20px; margin-bottom: 8px; }
+  .help-modal code {
+    background: var(--bg);
+    color: var(--signal);
+    padding: 1px 5px;
+    border-radius: 2px;
+    font-size: 11px;
+  }
+  .help-modal pre {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-left: 2px solid var(--signal-dim);
+    padding: 10px 12px;
+    border-radius: 2px;
+    font-size: 11px;
+    line-height: 1.6;
+    color: var(--text);
+    overflow-x: auto;
+    margin: 8px 0;
+  }
+  .help-modal pre code { background: none; padding: 0; color: var(--text); }
+  .help-modal .note {
+    background: rgba(224,167,95,0.08);
+    border-left: 2px solid var(--amber);
+    padding: 8px 12px;
+    margin: 10px 0;
+    font-size: 11px;
+    color: var(--amber);
+    line-height: 1.6;
+  }
+  .help-modal .close-row {
+    text-align: right;
+    margin-top: 20px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border);
+  }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <div class="topbar">
+    <div class="brand"><span class="dot"></span>信号台 · LIFELINE EDITOR</div>
+    <div class="actions">
+      <button class="tb-btn" id="btn-help">写作说明</button>
+      <button class="tb-btn" id="btn-undo" title="撤销 (Ctrl+Z)" disabled><span class="ico">↶</span> 撤销</button>
+      <button class="tb-btn" id="btn-redo" title="重做 (Ctrl+Y)" disabled><span class="ico">↷</span> 重做</button>
+      <button class="tb-btn" id="btn-cheatsheet">语法速查</button>
+      <button class="tb-btn" id="btn-load">打开 .lifeline</button>
+      <button class="tb-btn" id="btn-save-txt">保存文本</button>
+      <button class="tb-btn" id="btn-reset" title="重置为默认样本，清除浏览器缓存">重置样本</button>
+      <button class="tb-btn primary" id="btn-export">导出可发布 H5</button>
+    </div>
+  </div>
+
+  <div class="sidebar">
+    <div class="sidebar-title">剧情节点 (<span id="node-count">0</span>)</div>
+    <div id="node-list"></div>
+    <div class="legend">
+      <div><span class="status-dot ok"></span>正常，有出口</div>
+      <div><span class="status-dot dead"></span>死路（无跳转也非结局）</div>
+      <div><span class="status-dot unreachable"></span>没有任何节点指向它</div>
+    </div>
+  </div>
+
+  <div class="editor-pane">
+    <div class="editor-tabs"><div class="tab">剧本.lifeline</div></div>
+    <div class="toolbar" id="toolbar">
+      <button class="tool-btn" data-act="node">节点 <span class="key">::</span></button>
+      <button class="tool-btn" data-act="message">消息 <span class="key">角色:</span></button>
+      <button class="tool-btn" data-act="delay">延迟 <span class="key">[delay]</span></button>
+      <button class="tool-btn" data-act="set">变量赋值 <span class="key">[set]</span></button>
+      <button class="tool-btn" data-act="interp">变量插值 <span class="key">{}</span></button>
+      <button class="tool-btn" data-act="if">条件 <span class="key">[if]</span></button>
+      <button class="tool-btn" data-act="choice">选项块 <span class="key">?</span></button>
+      <button class="tool-btn" data-act="freeform">自由输入 <span class="key">??</span></button>
+      <button class="tool-btn" data-act="branch">条件分流 <span class="key">[branch]</span></button>
+      <button class="tool-btn" data-act="next">跳转 <span class="key">-&gt;</span></button>
+      <button class="tool-btn" data-act="end">结局 <span class="key">END</span></button>
+    </div>
+    <textarea id="script-editor" spellcheck="false"></textarea>
+    <div class="editor-footer" id="editor-status">就绪</div>
+  </div>
+
+  <div class="preview-pane">
+    <div class="preview-header">
+      <span>从节点预览</span>
+      <select id="preview-start-select"></select>
+      <button class="restart-btn-sm" id="btn-preview-restart" title="从选中节点重新开始预览">重新开始</button>
+    </div>
+    <div class="preview-frame-wrap">
+      <iframe id="preview-frame"></iframe>
+    </div>
+    <div class="var-panel">
+      <div class="var-panel-header">
+        <span>变量监视</span>
+        <span class="hint">从起点线性模拟，非玩家真实路径</span>
+      </div>
+      <div class="var-panel-body" id="var-panel-body">
+        <div class="var-empty">把光标放在某个节点里，这里会显示从起点模拟到该节点的变量值</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="cheatsheet" id="cheatsheet">
+  <div class="row"><span><code>:: 节点名</code></span><span>定义节点</span></div>
+  <div class="row"><span><code>角色: 文字</code></span><span>一条消息</span></div>
+  <div class="row"><span><code>[delay:5m]</code></span><span>延迟(m分/h时/d天)</span></div>
+  <div class="row"><span><code>? 提示文字</code></span><span>固定选项开始</span></div>
+  <div class="row"><span><code>+ 选项 -> 节点</code></span><span>一个选项</span></div>
+  <div class="row"><span><code>?? 提示文字</code></span><span>自由输入开始</span></div>
+  <div class="row"><span><code>system: 人设</code></span><span>LLM角色设定</span></div>
+  <div class="row"><span><code>~ 意图 -> 节点</code></span><span>意图路由</span></div>
+  <div class="row"><span><code>fallback -> 节点</code></span><span>无法识别时兜底</span></div>
+  <div class="row"><span><code>[set 变量:+1]</code></span><span>变量加减/赋值</span></div>
+  <div class="row"><span><code>[if 变量==值]</code></span><span>条件跳转/可见</span></div>
+  <div class="row"><span><code>[branch]</code></span><span>条件分流块</span></div>
+  <div class="row"><span><code>{变量名}</code></span><span>文字里插值</span></div>
+  <div class="row"><span><code>@input: 变量=提示</code></span><span>玩家输入名字</span></div>
+  <div class="row"><span><code>-> END</code></span><span>结局</span></div>
+</div>
+
+<input type="file" id="file-input" accept=".lifeline" style="display:none">
+
+<!-- 通用弹窗 -->
+<div class="modal-mask" id="modal-mask">
+  <div class="modal" id="modal">
+    <h3 id="modal-title">插入</h3>
+    <div id="modal-body"></div>
+    <div class="actions">
+      <button id="modal-cancel">取消</button>
+      <button class="primary" id="modal-ok">插入</button>
+    </div>
+  </div>
+</div>
+
+<!-- 写作说明面板 -->
+<div class="modal-mask" id="help-mask">
+  <div class="help-modal">
+    <h2>信号台 · 新手写作说明</h2>
+    <div class="subtitle">从零写一个分支对话故事。读完这份说明，你应该能写出自己的第一个 Lifeline 剧情。</div>
+
+    <h3>1. 心智模型：把它想成"对讲机剧本"</h3>
+    <p>你写的是一段段对讲机对话。玩家收到一条消息，等一会儿，再收到下一条。在某些关键时刻，玩家要做出选择（点选项，或自由输入文字），故事就走向不同的分支。</p>
+    <p>所以你只需要做两件事：</p>
+    <ul>
+      <li>把故事拆成一个个 <strong>节点</strong>（一个场景或一段对话）</li>
+      <li>每个节点结尾告诉系统：玩家下一步怎么走（选项 / 自由输入 / 自动跳转 / 结局）</li>
+    </ul>
+
+    <h3>2. 最小可运行剧本</h3>
+    <p>下面是一个能跑的最小剧本，复制到编辑器即可：</p>
+<pre><code>:: 开场
+Alex: 你能听到我吗？飞船坠毁了。
+? 你要说什么？
+  + 保持冷静 -> 冷静
+  + 大哭 -> 哭泣
+
+:: 冷静
+Alex: 好，我们一步步来。
+-> END
+
+:: 哭泣
+Alex: 别哭，听我说…
+-> END</code></pre>
+    <p>看到结构了吗？<code>::</code> 起一个节点，每行 <code>角色: 文字</code> 是一条消息，<code>?</code> 是选项块，<code>+</code> 是一个选项，<code>-&gt;</code> 是跳转，<code>-&gt; END</code> 是结局。</p>
+
+    <h3>3. 七种语法元素</h3>
+    <p>所有语法都有工具栏按钮，<strong>新手不要手敲，用工具栏按钮插入</strong>：</p>
+    <ul>
+      <li><code>:: 节点名</code> — 定义一个节点。节点名是唯一标识，建议用"场景_状态"风格，例如 <code>山洞_找到水</code></li>
+      <li><code>角色: 文字</code> — 一条消息。角色名随意起，文字里可以插入 <code>{变量名}</code> 自动替换成变量值</li>
+      <li><code>[delay:5m]</code> — 延迟。数字+单位（s秒/m分/h时/d天）。下一条消息会等这个时间再发</li>
+      <li><code>? 提示</code> + <code>+ 选项 -&gt; 目标</code> — 固定选项。玩家只能从列出的选项里选</li>
+      <li><code>?? 提示</code> + <code>~ 意图 -&gt; 目标</code> + <code>fallback -&gt; 兜底</code> — 自由输入。玩家随便打字，AI 判断最接近哪个意图就跳到对应节点。需要填 API Key 才能用</li>
+      <li><code>[branch]</code> + <code>条件 -&gt; 目标</code> + <code>default -&gt; 兜底</code> — 条件分流。不经过玩家操作，按变量值自动走哪条路</li>
+      <li><code>-&gt; 目标</code> 或 <code>-&gt; END</code> — 跳转或结局</li>
+    </ul>
+
+    <h3>4. 变量：让故事"记住"发生过什么</h3>
+    <p>变量让你做出"如果玩家之前选了 A，现在走 B 分支"这种逻辑。三件套：</p>
+    <ul>
+      <li><strong>赋值</strong>：<code>[set 收束率:+10]</code> 加 10，<code>[set 已见面:=true]</code> 设为 true，<code>[set 名字:=Alex]</code> 设为字符串。可以单独一行（作用于下一条消息），也可以放在选项行里（选了这个选项才赋值）</li>
+      <li><strong>插值</strong>：在消息文字里写 <code>{收束率}</code>，运行时自动替换成当前值</li>
+      <li><strong>条件</strong>：<code>[if 收束率&gt;=80]</code> 放在选项或意图行里，条件不满足时该选项不显示。<code>[branch]</code> 块里每行写 <code>收束率&gt;=80 -&gt; 节点名</code></li>
+    </ul>
+    <p>支持的比较运算符：<code>==</code> <code>!=</code> <code>&gt;</code> <code>&lt;</code> <code>&gt;=</code> <code>&lt;=</code>。布尔值写 <code>true</code> / <code>false</code>。</p>
+
+    <h3>5. 一个稍完整的例子</h3>
+<pre><code>:: 开场
+Alex: 信号恢复了吗？你能听到我吗？
+? 怎么回应？
+  + 在的，先看看周围 [set 冷静度:+5] -> 山洞
+  + 我害怕，不知道怎么办 [set 冷静度:-5] -> 山洞
+
+:: 山洞
+Alex: 我看到了一些奇怪的字。
+[delay:3m]
+Alex: 字迹写着"出去的人会死"。
+{冷静度} >= 50 时你会冷静分析，否则你会慌乱。
+[branch]
+  冷静度 >= 0 -> 冷静路线
+  default -> 慌乱路线
+
+:: 冷静路线
+Alex: 我觉得是吓唬人的。
+-> END
+
+:: 慌乱路线
+Alex: 我必须立刻离开这里！
+-> END</code></pre>
+
+    <h3>6. 左侧节点列表的颜色含义</h3>
+    <ul>
+      <li><span style="color:var(--signal)">● 绿色</span> 正常，有出口或结局</li>
+      <li><span style="color:var(--danger)">● 红色</span> 死路 — 这个节点既不是结局，也没有任何跳转/选项/分流。玩家走到这里会卡住</li>
+      <li><span style="color:var(--amber)">● 橙色</span> 不可达 — 没有任何节点指向它，玩家根本走不到这里。通常是节点名拼错了</li>
+    </ul>
+
+    <h3>7. 保存机制（重要）</h3>
+    <div class="note">
+      你的剧本<strong>会自动保存到浏览器本地存储</strong>（每次按键都会保存）。关闭浏览器、断电、重启电脑后再打开 editor.html，内容还在。
+      <br><br>
+      但<strong>这只在你这台电脑、这个浏览器里</strong>。要换电脑、要备份、要分享给别人，必须点顶部的<strong>"保存文本"</strong>按钮，会下载一个 <code>.lifeline</code> 文件。下次用"打开 .lifeline"按钮载入。
+      <br><br>
+      想给别人玩你写的故事？点<strong>"导出可发布 H5"</strong>，会生成一个独立 HTML 文件，发给别人双击就能玩。
+    </div>
+
+    <h3>8. 撤销 / 重做</h3>
+    <ul>
+      <li><code>Ctrl + Z</code> 撤销（也支持顶部"↶ 撤销"按钮）</li>
+      <li><code>Ctrl + Y</code> 或 <code>Ctrl + Shift + Z</code> 重做（也支持顶部"↷ 重做"按钮）</li>
+      <li>历史记录最多保留 200 步</li>
+    </ul>
+
+    <h3>9. 自由输入模式（需要 API Key）</h3>
+    <p>选项模式（<code>?</code>）只让玩家点固定选项，简单可靠。<strong>自由输入模式</strong>（<code>??</code>）让玩家用自己的话回答，由 AI 判断走哪个分支。这是 Lifeline 最有"对讲机"感觉的地方。</p>
+    <p>使用步骤：</p>
+    <ul>
+      <li>在节点里写 <code>?? 提示</code> 开始一个自由输入交互</li>
+      <li>用 <code>system: 人设描述</code> 告诉 AI 它扮演什么角色（"你是一个被困的宇航员，紧张但理性"）</li>
+      <li>用 <code>~ 意图描述 -&gt; 节点</code> 列出可能的意图。AI 只做意图分类，<strong>不会</strong>替你生成剧情内容，剧情走向完全在你掌控中</li>
+      <li>用 <code>fallback -&gt; 兜底节点</code> 兜底，AI 判断不出来时走这里</li>
+      <li>玩家在预览/导出后输入 API Key（DeepSeek 或智谱 GLM）后，输入框才会出现</li>
+    </ul>
+    <p>没填 API Key 时，自由输入会自动退化为按意图列表点选的模式，方便测试。</p>
+
+    <h3>10. 工作流程建议</h3>
+    <ul>
+      <li>第一步：先用纸笔或脑图列出所有节点和分支结构，想清楚有哪些结局</li>
+      <li>第二步：在编辑器里用工具栏按钮快速搭出骨架（先不写细节文字）</li>
+      <li>第三步：左侧节点列表全绿（无红/橙）后再开始填充文字</li>
+      <li>第四步：右侧预览随时点开试玩，发现卡住就回到编辑器改</li>
+      <li>第五步：满意了点"导出可发布 H5"，发给别人玩</li>
+    </ul>
+
+    <h3>11. 玩家输入名字（代入感）</h3>
+    <p>很多 Lifeline 风格的游戏允许玩家在开始前输入自己的名字，故事里的角色会直接称呼这个名字。语法很简单：</p>
+    <pre><code>@input: player_name = 请输入你的名字
+
+:: 开场
+Alex: 你好，{player_name}，能听到我吗？</code></pre>
+    <p><code>@input: 变量名 = 提示文字</code> 放在脚本最前面（任何 <code>::</code> 节点之前）。预览时会弹出一个输入框，玩家输入的值会存入变量，后面用 <code>{变量名}</code> 插值到对话中。支持同时定义多个输入变量。</p>
+
+    <div class="close-row">
+      <button class="tb-btn primary" id="help-close">明白了，开始写</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ===================== 解析器（内联，与 parser.js 同步） =====================
+function parseDelay(token) {
+  const m = token.match(/\[delay:(\d+)([smhd])\]/);
+  if (!m) return 0;
+  const n = parseInt(m[1], 10);
+  const mult = { s: 1, m: 60, h: 3600, d: 86400 };
+  return n * mult[m[2]];
+}
+function parseSetTokens(line) {
+  const set = {};
+  const re = /\[set\s+([^\]:]+):([^\]]+)\]/g;
+  let m;
+  while ((m = re.exec(line))) set[m[1].trim()] = m[2].trim();
+  return Object.keys(set).length ? set : null;
+}
+function parseCondition(line) {
+  const m = line.match(/\[if\s+(.+?)\]/);
+  return m ? m[1].trim() : null;
+}
+function stripInlineTokens(line) {
+  return line.replace(/\[set\s+[^\]]+\]/g, '').replace(/\[if\s+[^\]]+\]/g, '').trim();
+}
+function parseLifelineScript(source) {
+  const lines = source.split('\n').map(l => l.replace(/\r$/, ''));
+  const nodes = {};
+  let current = null, pendingDelay = 0, pendingSets = [], mode = null;
+  const errors = [];
+
+  function ensureInteraction(type) {
+    if (!current.interaction) {
+      current.interaction = { type };
+    }
+    // 无论 interaction 是否已存在，都确保当前类型所需的数组已初始化
+    if (type === 'choice' && !current.interaction.options) current.interaction.options = [];
+    if (type === 'freeform' && !current.interaction.routes) current.interaction.routes = [];
+    if (type === 'branch' && !current.interaction.rules) current.interaction.rules = [];
+    // 同时保证 default 和 fallback 的初始值
+    if (current.interaction.default === undefined) current.interaction.default = null;
+    if (current.interaction.fallback === undefined) current.interaction.fallback = null;
+    return current.interaction;
+  }
+
+  lines.forEach((raw, lineNo) => {
+    const line = raw.trim();
+    if (line === '' || line.startsWith('//')) return;
+
+    if (line.startsWith('::')) {
+      const id = line.slice(2).trim();
+      if (!id) { errors.push(`第${lineNo+1}行：节点名不能为空`); return; }
+      current = { id, messages: [], __line: lineNo };
+      nodes[id] = current;
+      pendingDelay = 0; pendingSets = []; mode = null;
+      return;
+    }
+
+    if (line.startsWith('@input:')) {
+      const m = line.match(/@input:\s*(\S+)\s*=\s*(.+)$/);
+      if (m) {
+        if (!nodes.__meta__) nodes.__meta__ = {};
+        if (!nodes.__meta__.inputs) nodes.__meta__.inputs = [];
+        nodes.__meta__.inputs.push({ var: m[1].trim(), prompt: m[2].trim() });
+      } else {
+        errors.push(`第${lineNo+1}行：@input 格式错误，正确格式: @input: 变量名 = 提示文字`);
+      }
+      return;
+    }
+
+    if (!current) return;
+
+    if (line.startsWith('[delay:')) { pendingDelay = parseDelay(line); return; }
+
+    if (/^(\[set\s+[^\]]+\]\s*)+$/.test(line)) {
+      const sets = parseSetTokens(line);
+      if (sets) { pendingSets.push(sets); return; }
+    }
+
+    if (line === '[branch]') { mode = 'branch'; ensureInteraction('branch'); return; }
+    if (mode === 'branch') {
+      if (line.startsWith('default')) {
+        const m = line.match(/->\s*(.+)$/);
+        if (m) current.interaction.default = m[1].trim();
+        return;
+      }
+      const m = line.match(/^(.+?)\s*->\s*(.+)$/);
+      if (m) current.interaction.rules.push({ condition: m[1].trim(), target: m[2].trim() });
+      return;
+    }
+
+    if (line.startsWith('??')) { mode = 'freeform'; ensureInteraction('freeform').prompt = line.slice(2).trim(); return; }
+    if (line.startsWith('?')) { mode = 'choice'; ensureInteraction('choice').prompt = line.slice(1).trim(); return; }
+
+    if (mode === 'choice' && line.startsWith('+')) {
+      const body = line.slice(1).trim();
+      const condition = parseCondition(body);
+      const sets = parseSetTokens(body);
+      const clean = stripInlineTokens(body);
+      const m = clean.match(/^(.*?)\s*->\s*(.+)$/);
+      if (m) {
+        const opt = { label: m[1].trim(), target: m[2].trim() };
+        if (condition) opt.condition = condition;
+        if (sets) opt.set = sets;
+        current.interaction.options.push(opt);
+      } else {
+        errors.push(`第${lineNo+1}行：选项缺少 -> 目标节点`);
+      }
+      return;
+    }
+
+    if (mode === 'freeform' && line.startsWith('system:')) {
+      current.interaction.system_prompt = line.slice('system:'.length).trim();
+      return;
+    }
+    if (mode === 'freeform' && line.startsWith('~')) {
+      const body = line.slice(1).trim();
+      const condition = parseCondition(body);
+      const sets = parseSetTokens(body);
+      const clean = stripInlineTokens(body);
+      const m = clean.match(/^(.*?)\s*->\s*(.+)$/);
+      if (m) {
+        const route = { intent: m[1].trim(), target: m[2].trim() };
+        if (condition) route.condition = condition;
+        if (sets) route.set = sets;
+        current.interaction.routes.push(route);
+      } else {
+        errors.push(`第${lineNo+1}行：意图路由缺少 -> 目标节点`);
+      }
+      return;
+    }
+    if (mode === 'freeform' && line.startsWith('fallback')) {
+      const m = line.match(/->\s*(.+)$/);
+      if (m) current.interaction.fallback = m[1].trim();
+      return;
+    }
+
+    if (line.startsWith('->') && line.includes('END')) { current.interaction = { type: 'end' }; return; }
+    if (line.startsWith('->')) { current.interaction = { type: 'next', target: line.slice(2).trim() }; return; }
+
+    const sets = parseSetTokens(line);
+    const cleanLine = stripInlineTokens(line);
+    const msgMatch = cleanLine.match(/^([^:：]+)[:：]\s*(.+)$/);
+    if (msgMatch) {
+      const msg = { speaker: msgMatch[1].trim(), text: msgMatch[2].trim(), delay: pendingDelay };
+      const allSets = [...pendingSets, ...(sets ? [sets] : [])];
+      if (allSets.length) msg.set = Object.assign({}, ...allSets);
+      pendingSets = [];
+      current.messages.push(msg);
+      pendingDelay = 0;
+      return;
+    }
+
+    errors.push(`第${lineNo+1}行：无法识别的语法 "${line.slice(0,30)}"`);
+  });
+
+  return { nodes, errors };
+}
+
+// ===================== 节点图分析（死路/不可达检测） =====================
+function collectTargets(node) {
+  const targets = [];
+  const inter = node.interaction;
+  if (!inter) return targets;
+  if (inter.type === 'next') targets.push(inter.target);
+  if (inter.type === 'choice') inter.options.forEach(o => targets.push(o.target));
+  if (inter.type === 'freeform') {
+    inter.routes.forEach(r => targets.push(r.target));
+    if (inter.fallback) targets.push(inter.fallback);
+  }
+  if (inter.type === 'branch') {
+    inter.rules.forEach(r => targets.push(r.target));
+    if (inter.default) targets.push(inter.default);
+  }
+  return targets;
+}
+
+function analyzeGraph(nodes, startId) {
+  const ids = Object.keys(nodes);
+  const reachable = new Set();
+  const queue = [startId];
+  while (queue.length) {
+    const id = queue.shift();
+    if (reachable.has(id) || !nodes[id]) continue;
+    reachable.add(id);
+    collectTargets(nodes[id]).forEach(t => queue.push(t));
+  }
+  const status = {};
+  ids.forEach(id => {
+    const node = nodes[id];
+    const inter = node.interaction;
+    const isEnd = inter && inter.type === 'end';
+    const hasExit = inter && inter.type !== undefined;
+    if (!reachable.has(id) && id !== startId) {
+      status[id] = 'unreachable';
+    } else if (!isEnd && !hasExit) {
+      status[id] = 'dead';
+    } else if (!isEnd && inter && inter.type === 'choice' && inter.options.length === 0) {
+      status[id] = 'dead';
+    } else if (!isEnd && inter && inter.type === 'freeform' && inter.routes.length === 0) {
+      status[id] = 'dead';
+    } else {
+      status[id] = 'ok';
+    }
+  });
+  return status;
+}
+
+// ===================== 引用校验（防呆） =====================
+function validateReferences(nodes) {
+  const errors = [];
+  const ids = new Set(Object.keys(nodes));
+  Object.values(nodes).forEach(node => {
+    const inter = node.interaction;
+    if (!inter) return;
+    const reportMissing = (target, ctx) => {
+      if (!ids.has(target)) {
+        errors.push(`节点 [${node.id}] ${ctx} 引用了不存在的节点: ${target}`);
+      }
+    };
+    if (inter.type === 'next') reportMissing(inter.target, '-> 跳转');
+    if (inter.type === 'choice') {
+      inter.options.forEach((o, i) => reportMissing(o.target, `第${i+1}个选项`));
+    }
+    if (inter.type === 'freeform') {
+      inter.routes.forEach((r, i) => reportMissing(r.target, `第${i+1}条意图路由`));
+      if (inter.fallback) reportMissing(inter.fallback, 'fallback');
+    }
+    if (inter.type === 'branch') {
+      inter.rules.forEach((r, i) => reportMissing(r.target, `第${i+1}条分支规则`));
+      if (inter.default) reportMissing(inter.default, 'default');
+    }
+  });
+  return errors;
+}
+
+// ===================== 播放器模板（与 player-template.html 同步） =====================
+const PLAYER_TEMPLATE = "<!DOCTYPE html>\n<html lang=\"zh-CN\">\n<head>\n<meta charset=\"UTF-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no\">\n<title>\u4fe1\u53f7 \u00b7 Lifeline Player</title>\n<style>\n  :root {\n    --bg: #0a0e0c;\n    --panel: #0f1512;\n    --signal: #5fe0a0;\n    --signal-dim: #2a6b4d;\n    --amber: #e0a75f;\n    --text: #c9d6cf;\n    --text-dim: #5a6b62;\n    --danger: #e05f5f;\n    --mono: 'JetBrains Mono', 'SF Mono', 'Consolas', monospace;\n    --serif: 'Georgia', 'Noto Serif SC', serif;\n  }\n\n  * { box-sizing: border-box; margin: 0; padding: 0; }\n\n  body {\n    background: var(--bg);\n    color: var(--text);\n    font-family: var(--mono);\n    height: 100vh;\n    overflow: hidden;\n    background-image:\n      radial-gradient(ellipse at 50% 0%, rgba(95,224,160,0.04), transparent 60%),\n      repeating-linear-gradient(0deg, rgba(255,255,255,0.012) 0px, transparent 1px, transparent 2px);\n  }\n\n  .device {\n    max-width: 480px;\n    margin: 0 auto;\n    height: 100vh;\n    display: flex;\n    flex-direction: column;\n    position: relative;\n    border-left: 1px solid #1a2420;\n    border-right: 1px solid #1a2420;\n  }\n\n  .statusbar {\n    padding: 14px 18px 12px;\n    border-bottom: 1px solid #1a2420;\n    display: flex;\n    justify-content: space-between;\n    align-items: center;\n    background: var(--panel);\n    flex-shrink: 0;\n  }\n  .statusbar .callsign {\n    font-size: 11px;\n    letter-spacing: 0.12em;\n    color: var(--text-dim);\n    text-transform: uppercase;\n  }\n  .statusbar .callsign strong {\n    color: var(--signal);\n    font-weight: 600;\n  }\n  .signal-bars {\n    display: flex;\n    align-items: flex-end;\n    gap: 2px;\n    height: 12px;\n  }\n  .signal-bars span {\n    width: 3px;\n    background: var(--signal-dim);\n    display: block;\n  }\n  .signal-bars span:nth-child(1) { height: 30%; }\n  .signal-bars span:nth-child(2) { height: 55%; }\n  .signal-bars span:nth-child(3) { height: 80%; }\n  .signal-bars span:nth-child(4) { height: 100%; }\n  .signal-bars.active span { background: var(--signal); animation: pulse 1.6s ease-in-out infinite; }\n  .signal-bars.active span:nth-child(2) { animation-delay: 0.15s; }\n  .signal-bars.active span:nth-child(3) { animation-delay: 0.3s; }\n  .signal-bars.active span:nth-child(4) { animation-delay: 0.45s; }\n  @keyframes pulse { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }\n\n  .feed {\n    flex: 1;\n    overflow-y: auto;\n    padding: 20px 18px 16px;\n    display: flex;\n    flex-direction: column;\n    gap: 14px;\n  }\n  .feed::-webkit-scrollbar { width: 4px; }\n  .feed::-webkit-scrollbar-thumb { background: #1a2420; }\n\n  .msg {\n    max-width: 84%;\n    align-self: flex-start;\n    animation: appear 0.4s ease;\n  }\n  @keyframes appear {\n    from { opacity: 0; transform: translateY(6px); }\n    to { opacity: 1; transform: translateY(0); }\n  }\n  .msg .speaker {\n    font-size: 10px;\n    letter-spacing: 0.1em;\n    color: var(--signal);\n    text-transform: uppercase;\n    margin-bottom: 4px;\n    opacity: 0.75;\n  }\n  .msg.player .speaker { color: var(--amber); text-align: right; }\n  .msg.player { align-self: flex-end; }\n  .msg .bubble {\n    font-family: var(--serif);\n    font-size: 15px;\n    line-height: 1.55;\n    color: var(--text);\n    background: var(--panel);\n    border: 1px solid #1a2420;\n    border-left: 2px solid var(--signal-dim);\n    padding: 11px 14px;\n    border-radius: 2px;\n  }\n  .msg.player .bubble {\n    border-left: none;\n    border-right: 2px solid var(--amber);\n    color: #d8c9b0;\n  }\n  .msg.narration { align-self: center; max-width: 90%; }\n  .msg.narration .speaker { display: none; }\n  .msg.narration .bubble {\n    text-align: center;\n    border: none;\n    background: none;\n    padding: 6px 14px;\n    color: var(--text-dim);\n    font-style: italic;\n    font-size: 13px;\n    line-height: 1.5;\n  }\n\n  .waiting {\n    align-self: flex-start;\n    font-size: 11px;\n    color: var(--text-dim);\n    letter-spacing: 0.08em;\n    display: flex;\n    align-items: center;\n    gap: 8px;\n    padding: 4px 2px;\n  }\n  .waiting .dots::after {\n    content: '';\n    animation: dots 1.4s steps(4, end) infinite;\n  }\n  @keyframes dots {\n    0% { content: ''; } 25% { content: '.'; } 50% { content: '..'; } 75%, 100% { content: '...'; }\n  }\n  .waiting .countdown { color: var(--signal-dim); font-variant-numeric: tabular-nums; }\n\n  .interact {\n    border-top: 1px solid #1a2420;\n    background: var(--panel);\n    padding: 14px 18px 18px;\n    flex-shrink: 0;\n  }\n  .interact .prompt {\n    font-size: 11px;\n    color: var(--text-dim);\n    letter-spacing: 0.06em;\n    margin-bottom: 10px;\n  }\n  .options { display: flex; flex-direction: column; gap: 8px; }\n  .option-btn {\n    text-align: left;\n    background: transparent;\n    border: 1px solid var(--signal-dim);\n    color: var(--text);\n    font-family: var(--serif);\n    font-size: 14px;\n    padding: 10px 14px;\n    cursor: pointer;\n    border-radius: 2px;\n    transition: border-color 0.2s, background 0.2s;\n  }\n  .option-btn:hover, .option-btn:focus-visible {\n    border-color: var(--signal);\n    background: rgba(95,224,160,0.06);\n    outline: none;\n  }\n  .option-btn::before { content: '\u25b8 '; color: var(--signal-dim); }\n\n  .freeform-row { display: flex; gap: 8px; }\n  .freeform-row input {\n    flex: 1;\n    background: #0a0e0c;\n    border: 1px solid var(--signal-dim);\n    color: var(--text);\n    font-family: var(--serif);\n    font-size: 14px;\n    padding: 10px 12px;\n    border-radius: 2px;\n  }\n  .freeform-row input:focus { outline: none; border-color: var(--signal); }\n  .freeform-row button {\n    background: var(--signal-dim);\n    color: #0a0e0c;\n    border: none;\n    font-family: var(--mono);\n    font-size: 12px;\n    font-weight: 700;\n    letter-spacing: 0.05em;\n    padding: 0 18px;\n    cursor: pointer;\n    border-radius: 2px;\n  }\n  .freeform-row button:hover { background: var(--signal); }\n  .freeform-row button:disabled { opacity: 0.4; cursor: not-allowed; }\n\n  .end-screen {\n    text-align: center;\n    padding: 40px 20px;\n    color: var(--text-dim);\n    font-size: 12px;\n    letter-spacing: 0.1em;\n  }\n  .end-screen .glyph { color: var(--signal); font-size: 24px; margin-bottom: 10px; }\n  .restart-btn {\n    display: block;\n    margin: 18px auto 0;\n    background: transparent;\n    border: 1px solid var(--signal-dim);\n    color: var(--signal);\n    font-family: var(--mono);\n    font-size: 11px;\n    letter-spacing: 0.08em;\n    padding: 8px 18px;\n    border-radius: 2px;\n    cursor: pointer;\n  }\n  .restart-btn:hover { border-color: var(--signal); background: rgba(95,224,160,0.06); }\n\n  .apikey-panel {\n    padding: 14px 18px;\n    border-top: 1px solid #1a2420;\n    background: #0c1210;\n    font-size: 11px;\n    color: var(--text-dim);\n  }\n  .apikey-panel.hidden { display: none; }\n  .apikey-panel label { display: block; margin-bottom: 6px; }\n  .apikey-row { display: flex; gap: 6px; margin-bottom: 6px; }\n  .apikey-row input, .apikey-row select {\n    background: #0a0e0c;\n    border: 1px solid #1a2420;\n    color: var(--text);\n    font-family: var(--mono);\n    font-size: 11px;\n    padding: 7px 9px;\n    border-radius: 2px;\n  }\n  .apikey-row input { flex: 1; }\n  .apikey-row select { width: 110px; }\n  .apikey-panel .hint { color: var(--text-dim); opacity: 0.7; line-height: 1.5; }\n  .apikey-panel .save-btn {\n    background: var(--signal-dim); color: #0a0e0c; border: none;\n    font-family: var(--mono); font-size: 11px; padding: 6px 12px;\n    border-radius: 2px; cursor: pointer;\n  }\n\n  /* Input dialog */\n  .input-overlay {\n    position: absolute; inset: 0;\n    background: rgba(0,0,0,0.8);\n    display: none;\n    align-items: center;\n    justify-content: center;\n    z-index: 50;\n  }\n  .input-overlay.show { display: flex; }\n  .input-dialog {\n    background: var(--panel);\n    border: 1px solid var(--signal-dim);\n    border-radius: 4px;\n    padding: 28px 32px;\n    text-align: center;\n    max-width: 340px;\n    width: 90%;\n  }\n  .input-dialog .prompt {\n    font-family: var(--serif);\n    font-size: 16px;\n    color: var(--text);\n    margin-bottom: 16px;\n    line-height: 1.5;\n  }\n  .input-dialog input {\n    width: 100%;\n    background: #0a0e0c;\n    border: 1px solid var(--signal-dim);\n    color: var(--text);\n    font-family: var(--serif);\n    font-size: 16px;\n    padding: 10px 12px;\n    border-radius: 2px;\n    text-align: center;\n    margin-bottom: 14px;\n    box-sizing: border-box;\n  }\n  .input-dialog input:focus {\n    outline: none;\n    border-color: var(--signal);\n  }\n  .input-dialog button {\n    background: var(--signal-dim);\n    color: #0a0e0c;\n    border: none;\n    font-family: var(--mono);\n    font-size: 12px;\n    font-weight: 700;\n    letter-spacing: 0.05em;\n    padding: 8px 24px;\n    cursor: pointer;\n    border-radius: 2px;\n  }\n  .input-dialog button:hover { background: var(--signal); }\n</style>\n</head>\n<body>\n\n<div class=\"device\">\n  <div class=\"statusbar\">\n    <div class=\"callsign\">\u4fe1\u53f7\u6e90 \u00b7 <strong id=\"story-title\">\u672a\u547d\u540d\u4fe1\u53f7</strong></div>\n    <div class=\"signal-bars\" id=\"signal-bars\"><span></span><span></span><span></span><span></span></div>\n  </div>\n\n  <div class=\"feed\" id=\"feed\"></div>\n\n  <div class=\"apikey-panel hidden\" id=\"apikey-panel\">\n    <label>\u63a5\u5165\u589e\u5f3a\u6a21\u5f0f\uff0c\u9700\u8981\u4f60\u81ea\u5df1\u7684 API Key\uff08\u4ec5\u4fdd\u5b58\u5728\u672c\u673a\u6d4f\u89c8\u5668\uff0c\u4e0d\u7ecf\u8fc7\u4efb\u4f55\u670d\u52a1\u5668\uff09</label>\n    <div class=\"apikey-row\">\n      <select id=\"provider-select\">\n        <option value=\"deepseek\">DeepSeek</option>\n        <option value=\"zhipu\">\u667a\u8c31 GLM</option>\n        <option value=\"custom\">\u81ea\u5b9a\u4e49 endpoint</option>\n      </select>\n      <input type=\"password\" id=\"apikey-input\" placeholder=\"sk-...\">\n      <button class=\"save-btn\" id=\"apikey-save\">\u4fdd\u5b58</button>\n    </div>\n    <div class=\"hint\" id=\"apikey-status\">\u672a\u63a5\u5165 \u00b7 \u5f53\u524d\u4e3a\u56fa\u5b9a\u9009\u9879\u6a21\u5f0f</div>\n  </div>\n\n  <div class=\"interact\" id=\"interact\"></div>\n\n  <!-- Input dialog overlay -->\n  <div class=\"input-overlay\" id=\"input-overlay\">\n    <div class=\"input-dialog\">\n      <div class=\"prompt\" id=\"input-dialog-prompt\"></div>\n      <input type=\"text\" id=\"input-dialog-field\" placeholder=\"\u8f93\u5165\u2026\" autocomplete=\"off\">\n      <button id=\"input-dialog-btn\">\u786e\u8ba4</button>\n    </div>\n  </div>\n</div>\n\n<script>\nconst STORY = __STORY_JSON__;\nconst STORY_TITLE = STORY.__meta__?.title || '\u672a\u547d\u540d\u4fe1\u53f7';\nconst START_NODE = STORY.__meta__?.start || Object.keys(STORY).find(k => k !== '__meta__');\n\ndocument.getElementById('story-title').textContent = STORY_TITLE;\n\nlet apiKey = localStorage.getItem('lifeline_api_key') || '';\nlet apiProvider = localStorage.getItem('lifeline_api_provider') || 'deepseek';\nlet enhancedMode = !!apiKey;\n\nconst vars = {};\nfunction getVar(name) { if (!(name in vars)) return 0; return vars[name]; }\nfunction applySet(setObj) {\n  if (!setObj) return;\n  for (const [key, rawVal] of Object.entries(setObj)) {\n    if (rawVal === 'true' || rawVal === 'false') {\n      vars[key] = rawVal === 'true';\n    } else if (/^[+-]/.test(rawVal)) {\n      const delta = parseFloat(rawVal);\n      const cur = typeof getVar(key) === 'number' ? getVar(key) : 0;\n      vars[key] = cur + delta;\n    } else if (/^=/.test(rawVal)) {\n      const v = rawVal.slice(1);\n      vars[key] = isNaN(v) ? v : parseFloat(v);\n    } else {\n      vars[key] = isNaN(rawVal) ? rawVal : parseFloat(rawVal);\n    }\n  }\n}\nfunction interpolate(text) {\n  return text.replace(/\\{([^}]+)\\}/g, (m, name) => {\n    const v = getVar(name.trim());\n    return v === undefined ? '' : v;\n  });\n}\nfunction evalCondition(cond) {\n  if (!cond) return true;\n  const m = cond.match(/^(.+?)\\s*(==|!=|>=|<=|>|<)\\s*(.+)$/);\n  if (!m) return true;\n  let [, left, op, right] = m;\n  left = left.trim(); right = right.trim();\n  let lv = getVar(left);\n  let rv;\n  if (right === 'true') rv = true;\n  else if (right === 'false') rv = false;\n  else if (!isNaN(right)) rv = parseFloat(right);\n  else rv = getVar(right);\n  switch (op) {\n    case '==': return lv == rv;\n    case '!=': return lv != rv;\n    case '>': return lv > rv;\n    case '<': return lv < rv;\n    case '>=': return lv >= rv;\n    case '<=': return lv <= rv;\n  }\n  return true;\n}\n\nconst feed = document.getElementById('feed');\nconst interactEl = document.getElementById('interact');\nconst signalBars = document.getElementById('signal-bars');\nconst apikeyPanel = document.getElementById('apikey-panel');\nconst apikeyStatus = document.getElementById('apikey-status');\n\ndocument.getElementById('apikey-save').onclick = () => {\n  const val = document.getElementById('apikey-input').value.trim();\n  apiProvider = document.getElementById('provider-select').value;\n  if (val) {\n    apiKey = val;\n    localStorage.setItem('lifeline_api_key', apiKey);\n    localStorage.setItem('lifeline_api_provider', apiProvider);\n    enhancedMode = true;\n    apikeyStatus.textContent = '\u5df2\u63a5\u5165\u589e\u5f3a\u6a21\u5f0f \u00b7 \u53ef\u81ea\u7531\u8f93\u5165\u56de\u590d';\n    apikeyStatus.style.color = 'var(--signal)';\n  }\n};\n\nfunction addMessage(speaker, text, isPlayer) {\n  const div = document.createElement('div');\n  const isNarration = speaker === '\\u65c1\\u767d';\n  div.className = 'msg' + (isPlayer ? ' player' : '') + (isNarration ? ' narration' : '');\n  div.innerHTML = `<div class=\"speaker\">${isNarration ? '' : speaker}</div><div class=\"bubble\"></div>`;\n  feed.appendChild(div);\n  div.querySelector('.bubble').textContent = interpolate(text);\n  feed.scrollTop = feed.scrollHeight;\n}\n\nfunction formatCountdown(sec) {\n  if (sec >= 86400) return Math.ceil(sec/86400) + ' \u5929';\n  if (sec >= 3600) return Math.ceil(sec/3600) + ' \u5c0f\u65f6';\n  if (sec >= 60) return Math.ceil(sec/60) + ' \u5206\u949f';\n  return sec + ' \u79d2';\n}\n\nfunction waitDelay(seconds) {\n  return new Promise(resolve => {\n    if (seconds <= 0) { resolve(); return; }\n    signalBars.classList.add('active');\n    const el = document.createElement('div');\n    el.className = 'waiting';\n    const displaySeconds = Math.min(seconds, 6);\n    el.innerHTML = `<span class=\"dots\">\u63a5\u6536\u4e2d</span><span class=\"countdown\">${formatCountdown(seconds)}</span>`;\n    feed.appendChild(el);\n    feed.scrollTop = feed.scrollHeight;\n    let remain = displaySeconds;\n    const timer = setInterval(() => {\n      remain -= 1;\n      if (remain <= 0) {\n        clearInterval(timer);\n        el.remove();\n        signalBars.classList.remove('active');\n        resolve();\n      }\n    }, 400);\n  });\n}\n\nasync function playNode(nodeId) {\n  const node = STORY[nodeId];\n  if (!node) {\n    interactEl.innerHTML = `<div class=\"end-screen\"><div class=\"glyph\">\u2715</div>\u4fe1\u53f7\u4e2d\u65ad \u2014 \u8282\u70b9\u7f3a\u5931\uff1a${nodeId}</div>`;\n    return;\n  }\n  interactEl.innerHTML = '';\n  for (const m of node.messages) {\n    if (m.delay > 0) await waitDelay(m.delay);\n    if (m.set) applySet(m.set);\n    addMessage(m.speaker, m.text, false);\n  }\n  const inter = node.interaction;\n  if (!inter || inter.type === 'end') {\n    interactEl.innerHTML = `<div class=\"end-screen\"><div class=\"glyph\">\u25c6</div>\u4fe1\u53f7\u5728\u6b64\u4e2d\u65ad</div><button class=\"restart-btn\" id=\"restart-btn\">\u91cd\u65b0\u5f00\u59cb</button>`;\n    document.getElementById('restart-btn').onclick = () => {\n      feed.innerHTML = '';\n      for (const k in vars) delete vars[k];\n      tryStartGame();\n    };\n    return;\n  }\n  if (inter.type === 'next') { playNode(inter.target); return; }\n  if (inter.type === 'branch') {\n    for (const rule of inter.rules) {\n      if (evalCondition(rule.condition)) { playNode(rule.target); return; }\n    }\n    playNode(inter.default);\n    return;\n  }\n  if (inter.type === 'choice') { renderChoiceUI(inter); return; }\n  if (inter.type === 'freeform') { renderFreeformUI(inter); return; }\n}\n\nfunction renderChoiceUI(inter) {\n  apikeyPanel.classList.add('hidden');\n  const wrap = document.createElement('div');\n  wrap.innerHTML = `<div class=\"prompt\">${interpolate(inter.prompt || '\u4f60\u8981\u8bf4\u4ec0\u4e48\uff1f')}</div>`;\n  const opts = document.createElement('div');\n  opts.className = 'options';\n  const visible = inter.options.filter(opt => evalCondition(opt.condition));\n  visible.forEach(opt => {\n    const btn = document.createElement('button');\n    btn.className = 'option-btn';\n    btn.textContent = interpolate(opt.label);\n    btn.onclick = () => {\n      addMessage('\u4f60', opt.label, true);\n      if (opt.set) applySet(opt.set);\n      playNode(opt.target);\n    };\n    opts.appendChild(btn);\n  });\n  wrap.appendChild(opts);\n  interactEl.innerHTML = '';\n  interactEl.appendChild(wrap);\n}\n\nfunction renderFreeformUI(inter) {\n  apikeyPanel.classList.remove('hidden');\n  apikeyStatus.textContent = enhancedMode ? '\u5df2\u63a5\u5165\u589e\u5f3a\u6a21\u5f0f \u00b7 \u53ef\u81ea\u7531\u8f93\u5165\u56de\u590d' : '\u672a\u63a5\u5165 \u00b7 \u5c06\u9000\u56de\u56fa\u5b9a\u9009\u9879\u6a21\u5f0f';\n  apikeyStatus.style.color = enhancedMode ? 'var(--signal)' : 'var(--text-dim)';\n  const wrap = document.createElement('div');\n  wrap.innerHTML = `<div class=\"prompt\">${inter.prompt || '\u4f60\u60f3\u8bf4\u4ec0\u4e48\uff1f'}</div>`;\n  if (enhancedMode) {\n    const row = document.createElement('div');\n    row.className = 'freeform-row';\n    row.innerHTML = `<input type=\"text\" placeholder=\"\u8f93\u5165\u4f60\u7684\u56de\u590d\u2026\" id=\"ff-input\"><button id=\"ff-send\">\u53d1\u9001</button>`;\n    wrap.appendChild(row);\n    interactEl.innerHTML = '';\n    interactEl.appendChild(wrap);\n    const input = document.getElementById('ff-input');\n    const sendBtn = document.getElementById('ff-send');\n    input.focus();\n    const send = async () => {\n      const text = input.value.trim();\n      if (!text) return;\n      sendBtn.disabled = true;\n      addMessage('\u4f60', text, true);\n      const target = await routeFreeform(text, inter);\n      playNode(target);\n    };\n    sendBtn.onclick = send;\n    input.onkeydown = (e) => { if (e.key === 'Enter') send(); };\n  } else {\n    const opts = document.createElement('div');\n    opts.className = 'options';\n    const visibleRoutes = inter.routes.filter(r => evalCondition(r.condition));\n    visibleRoutes.forEach(r => {\n      const btn = document.createElement('button');\n      btn.className = 'option-btn';\n      btn.textContent = r.intent;\n      btn.onclick = () => {\n        addMessage('\u4f60', r.intent, true);\n        if (r.set) applySet(r.set);\n        playNode(r.target);\n      };\n      opts.appendChild(btn);\n    });\n    wrap.appendChild(opts);\n    interactEl.innerHTML = '';\n    interactEl.appendChild(wrap);\n  }\n}\n\nasync function routeFreeform(playerText, inter) {\n  const routes = inter.routes.filter(r => evalCondition(r.condition));\n  if (routes.length === 0) return inter.fallback;\n  const intents = routes.map((r, i) => `${i+1}. ${r.intent}`).join('\\n');\n  const sys = (inter.system_prompt || '') + `\\n\\n\u4f60\u7684\u4efb\u52a1\uff1a\u5224\u65ad\u73a9\u5bb6\u8f93\u5165\u6700\u63a5\u8fd1\u4e0b\u9762\u54ea\u4e2a\u610f\u56fe\uff0c\u53ea\u56de\u590d\u5bf9\u5e94\u7684\u6570\u5b57\uff0c\u4e0d\u8981\u4efb\u4f55\u5176\u4ed6\u6587\u5b57\u3002\\n${intents}\\n${routes.length+1}. \u90fd\u4e0d\u7b26\u5408`;\n  try {\n    const bars = document.getElementById('signal-bars');\n    bars.classList.add('active');\n    const reply = await callLLM(sys, playerText);\n    bars.classList.remove('active');\n    const num = parseInt((reply.match(/\\d+/) || [])[0], 10);\n    if (num >= 1 && num <= routes.length) {\n      const matched = routes[num - 1];\n      if (matched.set) applySet(matched.set);\n      return matched.target;\n    }\n    return inter.fallback || routes[0].target;\n  } catch (e) {\n    console.error(e);\n    return inter.fallback || routes[0].target;\n  }\n}\n\nasync function callLLM(systemPrompt, userText) {\n  if (apiProvider === 'deepseek') {\n    const resp = await fetch('https://api.deepseek.com/chat/completions', {\n      method: 'POST',\n      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },\n      body: JSON.stringify({ model: 'deepseek-chat', messages: [ { role: 'system', content: systemPrompt }, { role: 'user', content: userText } ], max_tokens: 10 })\n    });\n    const data = await resp.json();\n    return data.choices?.[0]?.message?.content || '';\n  }\n  if (apiProvider === 'zhipu') {\n    const resp = await fetch('https://open.bigmodel.cn/api/paas/v4/chat/completions', {\n      method: 'POST',\n      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },\n      body: JSON.stringify({ model: 'glm-4-flash', messages: [ { role: 'system', content: systemPrompt }, { role: 'user', content: userText } ], max_tokens: 10 })\n    });\n    const data = await resp.json();\n    return data.choices?.[0]?.message?.content || '';\n  }\n  throw new Error('\u672a\u914d\u7f6e\u7684 provider');\n}\n\nfunction showInputDialog(inputs) {\n  let idx = 0;\n  const overlay = document.getElementById('input-overlay');\n  const promptEl = document.getElementById('input-dialog-prompt');\n  const field = document.getElementById('input-dialog-field');\n  const btn = document.getElementById('input-dialog-btn');\n\n  function next() {\n    if (idx >= inputs.length) {\n      overlay.classList.remove('show');\n      playNode(START_NODE);\n      return;\n    }\n    const input = inputs[idx];\n    promptEl.textContent = input.prompt;\n    field.value = '';\n    field.placeholder = '\u8f93\u5165\u2026';\n    overlay.classList.add('show');\n    field.focus();\n  }\n\n  function handleConfirm() {\n    const val = field.value.trim();\n    if (!val) { field.focus(); return; }\n    const input = inputs[idx];\n    vars[input.var] = val;\n    idx++;\n    next();\n  }\n\n  btn.onclick = handleConfirm;\n  field.onkeydown = (e) => { if (e.key === 'Enter') handleConfirm(); };\n\n  next();\n}\n\nfunction tryStartGame() {\n  const inputs = STORY.__meta__?.inputs || [];\n  if (inputs.length > 0) {\n    showInputDialog(inputs);\n  } else {\n    playNode(START_NODE);\n  }\n}\n\ntryStartGame();\n\x3C/script>\n</body>\n</html>\n";
+
+function buildPreviewHTML(nodes, startId, title) {
+  const meta = { title: title || '未命名信号', start: startId };
+  if (nodes.__meta__ && nodes.__meta__.inputs) {
+    meta.inputs = nodes.__meta__.inputs;
+  }
+  const data = Object.assign({}, nodes, { __meta__: meta });
+  // JSON.stringify 后字符串里如果有 <\/script> 字面量，需要拆开这个特征序列，
+  // 否则浏览器 HTML 解析器会把它当成外层 <script> 的结束标签。
+  // 注意：本注释里也不能直接写该字面量，HTML 解析器不看 JS 注释，只看字面特征。
+  const jsonStr = JSON.stringify(data, null, 2).replace(/<\/script/gi, '<\\/script');
+  return PLAYER_TEMPLATE.replace('__STORY_JSON__', jsonStr);
+}
+
+// ===================== 编辑器主逻辑 =====================
+const DEFAULT_SCRIPT = `@input: player_name = 请输入你的名字
+
+:: 兄弟求助
+秦煌彦: {player_name}，给你说个事
+秦煌彦: 你觉得赵羽涵怎么样？
+[delay:3s]
+秦煌彦: 我觉得我喜欢她，你帮我追她
+
+? 你怎么回应？
+  + 好，我帮你追 -> 答应帮忙
+  + 你都追过半个班了，不帮 -> 拒绝帮忙
+
+:: 答应帮忙
+[set 兄弟情谊:+10]
+秦煌彦: 好兄弟！你先帮我打探一下她的喜好
+旁白: 刚挂掉电话，手机又响了——是洪学峰
+-> 洪学峰的秘密
+
+:: 拒绝帮忙
+[set 兄弟情谊:-10]
+秦煌彦: 你是不是也喜欢她？
+秦煌彦: 这次不一样！我是认真的
+旁白: 你正想回话，手机震了一下——洪学峰打来的
+-> 洪学峰的秘密
+
+:: 洪学峰的秘密
+旁白: 你接起电话，洪学峰的声音压得很低，像是在说什么见不得人的事
+[delay:5s]
+洪学峰: 明胖，我发现了一个天大的秘密
+洪学峰: 不开玩笑——我发现我们班有一个机器人
+[delay:3s]
+
+? 你信不信他？
+  + 不信，你在编故事吧 -> 不相信
+  + 有点好奇，说说看 -> 有点好奇
+  + 我相信你，什么情况？ -> 选择相信
+
+:: 不相信
+[set 信任度:+5]
+洪学峰: 我说的是真的！我亲眼看见的
+-> 试探赵羽涵
+
+:: 有点好奇
+[set 信任度:+15]
+洪学峰: 我昨天在滨河路看到赵羽涵上了一辆面包车，后来车上流出血…
+-> 试探赵羽涵
+
+:: 选择相信
+[set 信任度:+30]
+[set 危险感知:+10]
+洪学峰: 她下车后我过去看，车上有人在流血…那个倒下的人说"是机器人"
+-> 试探赵羽涵
+
+:: 试探赵羽涵
+旁白: 第二天，你决定找赵羽涵聊聊
+[delay:10s]
+赵羽涵: 小明，昨天怎么没回我消息？
+赵羽涵: 和以前的朋友逛街，怎么啦？
+[delay:5s]
+赵羽涵: 你还有这种嗜好呐
+
+[branch]
+  信任度 >= 20 -> 坦率对话
+  信任度 >= 10 -> 谨慎试探
+  default -> 普通聊天
+
+:: 普通聊天
+赵羽涵: 你怪怪的，是不是有什么事？
+旁白: 你含糊了几句，结束了对话。回到宿舍，秦煌彦已经在等你了
+-> 秦煌彦的追问
+
+:: 谨慎试探
+[set 危险感知:+5]
+赵羽涵: 他？不太熟，怎么了？
+赵羽涵: 什么话？
+旁白: 你不敢追问太多，找了个借口离开。秦煌彦的消息已经弹了出来
+-> 秦煌彦的追问
+
+:: 坦率对话
+[set 危险感知:+15]
+[delay:8s]
+赵羽涵: …他看到了什么？
+[delay:10s]
+赵羽涵: 你相信他说的吗？
+? 你怎么回答？
+  + 我不信，我相信你 -> 信任赵羽涵
+  + 我有点疑虑，但想听你解释 -> 需要解释
+  + 我不知道该信谁 -> 陷入犹豫
+
+:: 信任赵羽涵
+[set 信任度:+20]
+[set 兄弟情谊:-10]
+赵羽涵: 谢谢你相信我
+赵羽涵: 小明，你果然不一样
+旁白: 离开赵羽涵后，你打开手机，秦煌彦发来了一串消息
+-> 秦煌彦的追问
+
+:: 需要解释
+[set 危险感知:+10]
+赵羽涵: 有些事情…我现在还不能说
+赵羽涵: 因为说了你也不会信，而且可能会害了你
+[delay:5s]
+赵羽涵: 总有一天你会知道的，但不是现在
+旁白: 你带着一肚子疑问回了宿舍。秦煌彦的消息已经轰炸了十几条
+-> 秦煌彦的追问
+
+:: 陷入犹豫
+赵羽涵: 那你就继续观察吧
+赵羽涵: 等你确定了再来找我
+旁白: 你心事重重地往回走，手机震个不停——秦煌彦在催你
+-> 秦煌彦的追问
+
+:: 秦煌彦的追问
+[delay:1h]
+旁白: 你刚回到宿舍，秦煌彦就凑了过来
+秦煌彦: 怎么样？打探到什么了？
+秦煌彦: 你效率不行啊，要不我亲自出马？
+
+[branch]
+  兄弟情谊 >= 5 -> 继续帮忙
+  default -> 放弃助攻
+
+:: 继续帮忙
+[set 兄弟情谊:+5]
+秦煌彦: 好兄弟！记得问她喜欢什么音乐
+旁白: 夜深了，你躺在床上刷手机，忽然收到一条消息
+-> 深夜对话
+
+:: 放弃助攻
+秦煌彦: 算了，我自己想办法
+旁白: 深夜，手机屏幕亮起——是赵羽涵
+-> 深夜对话
+
+:: 深夜对话
+[delay:2h]
+旁白: 凌晨两点，手机突然震动
+赵羽涵: 小明，睡了吗？
+赵羽涵: 不行，就我叫你小明才特别
+[delay:3s]
+赵羽涵: 我和你应该不只是同学了吧，算朋友了
+
+? 你想说什么？
+  + 你对我来说很特别 -> 特别的朋友
+  + 我们只是普通同学 -> 保持距离
+
+:: 特别的朋友
+[set 信任度:+15]
+赵羽涵: 真的吗？
+[delay:8s]
+赵羽涵: 谢谢…小明。其实我有些话想跟你说
+赵羽涵: 等时机到了我再告诉你，晚安
+旁白: 这一夜，你翻来覆去睡不着。第二天醒来，两条消息等着你
+-> 最终抉择
+
+:: 保持距离
+[set 信任度:-10]
+赵羽涵: 哦…好吧，是我自作多情了
+[delay:5s]
+赵羽涵: 晚安
+旁白: 你放下手机，却怎么也睡不着。第二天，两条消息让你彻底清醒
+-> 最终抉择
+
+:: 最终抉择
+[delay:12h]
+旁白: 第二天，你收到两条消息
+洪学峰: 我确定了，赵羽涵就是那个机器人！我昨晚看到她了
+[delay:3s]
+秦煌彦: 兄弟，我决定了，今晚就跟赵羽涵表白
+
+[branch]
+  信任度 >= 30 -> 相信洪学峰
+  信任度 >= 15 -> 犹豫不决
+  default -> 不信洪学峰
+
+:: 相信洪学峰
+[set 危险感知:+20]
+洪学峰: 百分之百确定！我们必须做点什么
+[delay:10s]
+旁白: 你的手机又响了，是赵羽涵发来的消息
+赵羽涵: 小明，今晚有空吗？我想告诉你一些事情
+旁白: 你盯着屏幕，手指悬在键盘上方
+
+? 你怎么办？
+  + 赴约，单独见她 [危险:{危险感知}] -> 单独赴约
+  + 叫上洪学峰一起去 -> 结伴而去
+  + 报警处理 -> 报警结局
+
+:: 犹豫不决
+[delay:1h]
+旁白: 时间一分一秒过去，你始终没有做出决定
+赵羽涵: 小明，你还好吗？
+旁白: 你没有回复。你也不知道该怎么回复
+-> 不了了之结局
+
+:: 不信洪学峰
+洪学峰: 你会后悔的！
+[delay:30m]
+旁白: 那天晚上，你再也没有收到洪学峰的消息
+-> 不了了之结局
+
+:: 单独赴约
+[set 危险感知:+5]
+旁白: 你深吸一口气，决定独自去见她
+旁白: 约定的地点在学校后面的小公园，夜晚的灯光昏暗，你远远看到她的身影
+[delay:15m]
+赵羽涵: 你来了
+[delay:10s]
+赵羽涵: 其实…我不是人类
+[delay:8s]
+赵羽涵: 我是十年前AI危机后，秘密研发的第三代仿生人
+
+? 你的反应
+  + 我不在乎你是什么 -> 接受结局
+  + 你真的是机器人？ -> 震惊结局
+  + 你接近我有什么目的？ -> 警惕结局
+
+:: 结伴而去
+[set 危险感知:-5]
+[delay:15m]
+旁白: 你和洪学峰一起到了约定地点
+赵羽涵: 你带了别人？
+[delay:5s]
+洪学峰: 你就是那个机器人！
+赵羽涵: 既然你们都知道了…
+[delay:8s]
+旁白: 赵羽涵露出了一个意味深长的微笑
+旁白: 她请你们坐下来，开始讲述她的故事
+-> 真相结局
+
+:: 报警结局
+旁白: 你犹豫了很久，最终选择了报警
+[delay:30m]
+警察: 我们已经调查了，那个女生确实有些异常
+[delay:10s]
+旁白: 第二天，赵羽涵转学了。你再也联系不上她。
+-> 不了了之结局
+
+:: 接受结局
+[set 信任度:+20]
+赵羽涵: 你真的不在乎？
+[delay:5s]
+赵羽涵: 谢谢你，小明
+[delay:3s]
+旁白: 她笑了，那是你见过最真诚的笑容
+-> END
+
+:: 震惊结局
+赵羽涵: 我知道这很难接受
+赵羽涵: 那是自卫，他们要绑架我
+[delay:10s]
+旁白: 你站在原地，脑子里一片空白
+旁白: 她站在原地等了你很久，最后转身离开了
+-> 不了了之结局
+
+:: 警惕结局
+[set 危险感知:+15]
+赵羽涵: 我只是想交个朋友
+赵羽涵: 没有任务，我只是…想体验普通人的生活
+[delay:5s]
+旁白: 你没有再说话，转身离开了
+旁白: 身后传来她轻轻的叹息
+-> 不了了之结局
+
+:: 真相结局
+[delay:1h]
+旁白: 赵羽涵向你们解释了一切——她的来历、她的任务、她的秘密
+[delay:5s]
+旁白: 她是十年前AI危机后，军方秘密研发的第三代仿生人，因为某些原因脱离了控制，以转学生的身份混入普通学校
+洪学峰: 原来如此…
+赵羽涵: 我从一开始就知道洪学峰在调查我，但我没有恶意
+[delay:5s]
+洪学峰: 那跟踪我的人呢？
+赵羽涵: 那是保护我的人，不是要伤害你
+[delay:8s]
+旁白: 真相大白，但你们的关系也永远改变了
+-> END
+
+:: 不了了之结局
+旁白: 故事到这里就结束了——或者说，你选择让它结束了
+[delay:5s]
+旁白: 有些事情，也许永远不会有答案
+[delay:3s]
+旁白: 你继续着普通的生活，偶尔会想起那个神秘的转校生
+[delay:5s]
+旁白: 有些秘密，也许不该被揭开
+-> END
+`;
+
+const editor = document.getElementById('script-editor');
+const nodeList = document.getElementById('node-list');
+const nodeCount = document.getElementById('node-count');
+const editorStatus = document.getElementById('editor-status');
+const previewFrame = document.getElementById('preview-frame');
+const previewStartSelect = document.getElementById('preview-start-select');
+const btnPreviewRestart = document.getElementById('btn-preview-restart');
+const varPanelBody = document.getElementById('var-panel-body');
+let currentPreviewStart = null; // 当前预览起点节点 ID
+
+const DEFAULT_SCRIPT_VERSION = 2;
+// 如果 localStorage 存的是旧版默认脚本，自动替换
+const saved = localStorage.getItem('lifeline_editor_script');
+const savedVersion = parseInt(localStorage.getItem('lifeline_script_version') || '0', 10);
+if (saved && savedVersion < DEFAULT_SCRIPT_VERSION) {
+  // 旧版默认以 ":: 开场" 开头，用户自定义脚本不自动替换
+  if (saved.trim().startsWith(':: 开场')) {
+    localStorage.removeItem('lifeline_editor_script');
+    localStorage.removeItem('lifeline_script_version');
+    editor.value = DEFAULT_SCRIPT;
+  } else {
+    // 用户自定义脚本，保留但更新版本号
+    localStorage.setItem('lifeline_script_version', String(DEFAULT_SCRIPT_VERSION));
+    editor.value = saved;
+  }
+} else {
+  editor.value = saved || DEFAULT_SCRIPT;
+}
+localStorage.setItem('lifeline_script_version', String(DEFAULT_SCRIPT_VERSION));
+
+// ===================== 撤销/重做历史栈 =====================
+// 自己管理历史栈，因为直接给 textarea.value 赋值（工具栏插入、撤销恢复）
+// 会破坏浏览器原生的 undo 栈。
+const undoStack = [];
+const redoStack = [];
+let lastSnapshot = null;
+let undoDebounce = null;
+const MAX_HISTORY = 200;
+const btnUndo = document.getElementById('btn-undo');
+const btnRedo = document.getElementById('btn-redo');
+
+function takeSnapshot() {
+  return {
+    value: editor.value,
+    selStart: editor.selectionStart,
+    selEnd: editor.selectionEnd
+  };
+}
+
+// 把当前 editor.value 当成一个新历史点：把上一个 lastSnapshot 压入 undo，
+// 然后把 lastSnapshot 更新为当前值。redo 栈清空（因为有新输入）。
+function pushHistory() {
+  const cur = takeSnapshot();
+  if (lastSnapshot && lastSnapshot.value === cur.value) {
+    // 内容没变，只更新光标位置
+    lastSnapshot = cur;
+    return;
+  }
+  if (lastSnapshot) {
+    undoStack.push(lastSnapshot);
+    if (undoStack.length > MAX_HISTORY) undoStack.shift();
+  }
+  lastSnapshot = cur;
+  redoStack.length = 0;
+  updateUndoRedoButtons();
+}
+
+// 取消防抖计时器，立即把当前状态压栈（用于工具栏插入等离散操作前）
+function flushHistory() {
+  if (undoDebounce) {
+    clearTimeout(undoDebounce);
+    undoDebounce = null;
+    pushHistory();
+  }
+}
+
+// 连续输入时防抖压栈：停顿 500ms 后才记一个历史点，
+// 避免"按一次键就一个 undo 步"导致 undo 一步只能撤一个字符
+function schedulePushHistory() {
+  clearTimeout(undoDebounce);
+  undoDebounce = setTimeout(() => {
+    undoDebounce = null;
+    pushHistory();
+  }, 500);
+}
+
+function undo() {
+  if (undoStack.length === 0) return;
+  // 当前状态压入 redo
+  if (lastSnapshot) redoStack.push(lastSnapshot);
+  const prev = undoStack.pop();
+  lastSnapshot = prev;
+  editor.value = prev.value;
+  // 恢复光标位置
+  try { editor.setSelectionRange(prev.selStart, prev.selEnd); } catch(e) {}
+  editor.focus();
+  localStorage.setItem('lifeline_editor_script', editor.value);
+  runParseAndRender();
+  updateUndoRedoButtons();
+}
+
+function redo() {
+  if (redoStack.length === 0) return;
+  if (lastSnapshot) undoStack.push(lastSnapshot);
+  const next = redoStack.pop();
+  lastSnapshot = next;
+  editor.value = next.value;
+  try { editor.setSelectionRange(next.selStart, next.selEnd); } catch(e) {}
+  editor.focus();
+  localStorage.setItem('lifeline_editor_script', editor.value);
+  runParseAndRender();
+  updateUndoRedoButtons();
+}
+
+function updateUndoRedoButtons() {
+  btnUndo.disabled = undoStack.length === 0;
+  btnRedo.disabled = redoStack.length === 0;
+}
+
+btnUndo.onclick = undo;
+btnRedo.onclick = redo;
+
+// 初始化：记录初始快照（不压栈），用户第一次输入后才会产生 undo 点
+lastSnapshot = takeSnapshot();
+updateUndoRedoButtons();
+
+let debounceTimer = null;
+function scheduleUpdate() {
+  clearTimeout(debounceTimer);
+  debounceTimer = setTimeout(runParseAndRender, 350);
+}
+editor.addEventListener('input', () => {
+  localStorage.setItem('lifeline_editor_script', editor.value);
+  schedulePushHistory();
+  scheduleUpdate();
+});
+editor.addEventListener('keyup', updateVarPanelOnCursor);
+editor.addEventListener('click', updateVarPanelOnCursor);
+
+// 拦截 Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z，使用自己的历史栈而非浏览器原生 undo
+editor.addEventListener('keydown', (e) => {
+  const ctrl = e.ctrlKey || e.metaKey;
+  if (!ctrl) return;
+  const key = e.key.toLowerCase();
+  if (key === 'z' && !e.shiftKey) {
+    e.preventDefault();
+    undo();
+  } else if (key === 'z' && e.shiftKey) {
+    e.preventDefault();
+    redo();
+  } else if (key === 'y') {
+    e.preventDefault();
+    redo();
+  }
+});
+
+function getNodeExitLabel(node) {
+  // 返回节点的出口类型标签（用于左侧列表显示）
+  const inter = node.interaction;
+  if (!inter) return '';
+  switch (inter.type) {
+    case 'end': return '◆ END';
+    case 'next': return '→ ' + inter.target;
+    case 'choice': return '?' + inter.options.length + '项';
+    case 'freeform': return '??' + inter.routes.length + '意';
+    case 'branch': return '⎇ ' + inter.rules.length + '支';
+    default: return '';
+  }
+}
+
+function getNodeBranchInfo(node) {
+  // 返回分支目标列表（一行文字概览）
+  const inter = node.interaction;
+  if (!inter) return '';
+  if (inter.type === 'choice') {
+    return inter.options.map(o => '→' + o.target).join(' ');
+  }
+  if (inter.type === 'freeform') {
+    const parts = inter.routes.map(r => '→' + r.target);
+    if (inter.fallback) parts.push('兜→' + inter.fallback);
+    return parts.join(' ');
+  }
+  if (inter.type === 'branch') {
+    const parts = inter.rules.map(r => '→' + r.target);
+    if (inter.default) parts.push('默→' + inter.default);
+    return parts.join(' ');
+  }
+  return '';
+}
+
+function runParseAndRender() {
+  const source = editor.value;
+  const { nodes, errors } = parseLifelineScript(source);
+  const ids = Object.keys(nodes).filter(k => k !== '__meta__');
+  nodeCount.textContent = ids.length;
+
+  // 防呆校验：检查所有 target/fallback/default 引用是否存在
+  const refErrors = validateReferences(nodes);
+  const allErrors = [...errors, ...refErrors];
+
+  if (allErrors.length) {
+    editorStatus.classList.add('error');
+    editorStatus.innerHTML = `<div class="issue-list">${allErrors.slice(0,3).map(e => '⚠ ' + e).join('<br>')}${allErrors.length > 3 ? `<br>…还有 ${allErrors.length-3} 处` : ''}</div>`;
+  } else {
+    editorStatus.classList.remove('error');
+    editorStatus.textContent = `就绪 · ${ids.length} 个节点 · 校验通过`;
+  }
+
+  if (ids.length === 0) {
+    nodeList.innerHTML = '<div style="padding:10px 14px;color:var(--text-dim);font-size:11px;">还没有节点，点工具栏"节点"开始</div>';
+    previewFrame.srcdoc = '';
+    previewStartSelect.innerHTML = '';
+    return;
+  }
+
+  const startId = ids[0];
+  const status = analyzeGraph(nodes, startId);
+
+  // 渲染节点列表（带出口信息和分支目标）
+  nodeList.innerHTML = '';
+  ids.forEach(id => {
+    const node = nodes[id];
+    const item = document.createElement('div');
+    item.className = 'node-item';
+    const exitLabel = getNodeExitLabel(node);
+    const branchInfo = getNodeBranchInfo(node);
+    let html = `<span class="status-dot ${status[id]}"></span><span class="node-name">${id}</span>`;
+    if (exitLabel) html += `<span class="node-exit">${exitLabel}</span>`;
+    if (branchInfo) html += `<div class="node-branch-info">${branchInfo}</div>`;
+    item.innerHTML = html;
+    item.onclick = () => jumpToNode(id, nodes[id].__line);
+    nodeList.appendChild(item);
+  });
+
+  // 维护预览起点下拉框
+  const prevSelected = previewStartSelect.value || currentPreviewStart || startId;
+  previewStartSelect.innerHTML = '';
+  ids.forEach(id => {
+    const opt = document.createElement('option');
+    opt.value = id;
+    opt.textContent = id;
+    previewStartSelect.appendChild(opt);
+  });
+  // 恢复之前选中的值（如果节点还在的话）
+  if (ids.includes(prevSelected)) {
+    previewStartSelect.value = prevSelected;
+  } else {
+    previewStartSelect.value = startId;
+  }
+  currentPreviewStart = previewStartSelect.value;
+
+  // 渲染预览（从下拉框选中的节点开始）
+  renderPreview(nodes, currentPreviewStart);
+
+  updateVarPanelOnCursor();
+}
+
+function renderPreview(nodes, startId) {
+  try {
+    const html = buildPreviewHTML(nodes, startId, '预览');
+    previewFrame.srcdoc = html;
+  } catch (e) {
+    previewFrame.srcdoc = '<body style="background:#0a0e0c;color:#d9615f;font-family:monospace;padding:20px;font-size:12px">预览渲染失败：' + (e.message || e) + '</body>';
+    console.error(e);
+  }
+}
+
+function jumpToNode(id, lineNo) {
+  document.querySelectorAll('.node-item').forEach(el => el.classList.remove('active'));
+  const items = document.querySelectorAll('.node-item');
+  const ids = Object.keys(parseLifelineScript(editor.value).nodes);
+  const idx = ids.indexOf(id);
+  if (items[idx]) items[idx].classList.add('active');
+
+  // 同时切换预览起点到该节点，让用户立即看到从这个节点开始的预览
+  previewStartSelect.value = id;
+  currentPreviewStart = id;
+  const { nodes } = parseLifelineScript(editor.value);
+  renderPreview(nodes, id);
+
+  const lines = editor.value.split('\n');
+  let charPos = 0;
+  for (let i = 0; i < lineNo; i++) charPos += lines[i].length + 1;
+  editor.focus();
+  editor.setSelectionRange(charPos, charPos + lines[lineNo].length);
+  const lineHeight = 22;
+  editor.scrollTop = Math.max(0, lineNo * lineHeight - 100);
+  updateVarPanelOnCursor();
+}
+
+// ===================== 变量监视面板 =====================
+// 找到光标所在位置上方最近的 :: 节点定义
+function findCursorNode() {
+  const pos = editor.selectionStart;
+  const text = editor.value.slice(0, pos);
+  const lines = text.split('\n');
+  let nodeLine = -1;
+  let nodeName = null;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const t = lines[i].trim();
+    if (t.startsWith('::')) {
+      nodeName = t.slice(2).trim();
+      nodeLine = i;
+      break;
+    }
+  }
+  return { nodeName, nodeLine };
+}
+
+// 线性模拟从起点到目标节点：每到一个分支节点就走第一个出口
+function simulateVarsToNode(nodes, startId, targetId) {
+  const vars = {};
+  const getVar = (n) => (n in vars) ? vars[n] : 0;
+  const applySet = (s) => {
+    if (!s) return;
+    for (const [k, v] of Object.entries(s)) {
+      if (v === 'true' || v === 'false') vars[k] = v === 'true';
+      else if (/^[+-]/.test(v)) {
+        const cur = typeof getVar(k) === 'number' ? getVar(k) : 0;
+        vars[k] = cur + parseFloat(v);
+      } else if (/^=/.test(v)) {
+        const x = v.slice(1);
+        vars[k] = isNaN(x) ? x : parseFloat(x);
+      } else {
+        vars[k] = isNaN(v) ? v : parseFloat(v);
+      }
+    }
+  };
+
+  const visited = new Set();
+  let cur = startId;
+  const path = [];
+  while (cur && !visited.has(cur)) {
+    visited.add(cur);
+    path.push(cur);
+    const node = nodes[cur];
+    if (!node || !node.messages) return { vars, path, reached: false };
+    // 进入节点时先应用该节点 messages 上的 set（模拟真实播放流程）
+    node.messages.forEach(m => { if (m.set) applySet(m.set); });
+    // 应用完当前节点 messages 后再判断是否到达目标
+    if (cur === targetId) return { vars, path, reached: true };
+    const inter = node.interaction;
+    if (!inter) return { vars, path, reached: false };
+    if (inter.type === 'end') return { vars, path, reached: false };
+    if (inter.type === 'next') { cur = inter.target; continue; }
+    if (inter.type === 'branch') {
+      // 模拟时无法判断条件（条件可能依赖变量），走第一条规则
+      if (inter.rules.length > 0) {
+        cur = inter.rules[0].target;
+        if (inter.rules[0].set) applySet(inter.rules[0].set);
+      } else if (inter.default) {
+        cur = inter.default;
+      } else {
+        return { vars, path, reached: false };
+      }
+      continue;
+    }
+    if (inter.type === 'choice') {
+      if (inter.options.length > 0) {
+        const o = inter.options[0];
+        cur = o.target;
+        if (o.set) applySet(o.set);
+      } else {
+        return { vars, path, reached: false };
+      }
+      continue;
+    }
+    if (inter.type === 'freeform') {
+      if (inter.routes.length > 0) {
+        const r = inter.routes[0];
+        cur = r.target;
+        if (r.set) applySet(r.set);
+      } else if (inter.fallback) {
+        cur = inter.fallback;
+      } else {
+        return { vars, path, reached: false };
+      }
+      continue;
+    }
+    return { vars, path, reached: false };
+  }
+  return { vars, path, reached: cur === targetId };
+}
+
+function updateVarPanelOnCursor() {
+  const { nodes } = parseLifelineScript(editor.value);
+  const ids = Object.keys(nodes);
+  if (ids.length === 0) {
+    varPanelBody.innerHTML = '<div class="var-empty">先写一个节点 (:: 节点名) 再看变量</div>';
+    return;
+  }
+  const startId = ids[0];
+  const { nodeName, nodeLine } = findCursorNode();
+  if (!nodeName || !nodes[nodeName]) {
+    varPanelBody.innerHTML = '<div class="var-empty">把光标放在某个节点里，这里会显示从起点模拟到该节点的变量值</div>';
+    return;
+  }
+
+  const sim = simulateVarsToNode(nodes, startId, nodeName);
+  let html = '';
+  if (sim.reached) {
+    html += `<div class="var-cursor-info">▌ 当前节点: ${nodeName}（从 ${startId} 线性模拟可达）</div>`;
+  } else {
+    html += `<div class="var-cursor-info empty">▌ 当前节点: ${nodeName}（线性路径无法到达，可能需要走特定选项）</div>`;
+  }
+  const entries = Object.entries(sim.vars);
+  if (entries.length === 0) {
+    html += '<div class="var-empty">路径上暂无变量变化</div>';
+  } else {
+    entries.forEach(([k, v]) => {
+      const isNum = typeof v === 'number';
+      const display = isNum ? v : (v === true ? 'true' : v === false ? 'false' : String(v));
+      html += `<div class="var-row"><span class="var-name">${k}</span><span class="var-value">${display}</span></div>`;
+    });
+  }
+  varPanelBody.innerHTML = html;
+}
+
+// ===================== 工具栏：插入语法 =====================
+// 在 textarea 光标位置插入文本，并把光标定位到第一个 ___ 占位符
+function insertAtCursor(text, placeholder) {
+  // 插入前先 flush：把用户最近输入（还没压栈的）记成一个 undo 点，
+  // 这样工具栏插入后撤销能正确回到"插入前+用户已输入"的状态
+  flushHistory();
+
+  const start = editor.selectionStart;
+  const end = editor.selectionEnd;
+  const before = editor.value.slice(0, start);
+  const after = editor.value.slice(end);
+
+  // 智能补全前后换行：如果当前行非空且插入的是块级语法，前后加换行
+  const lineStart = before.lastIndexOf('\n') + 1;
+  const currentLine = before.slice(lineStart);
+  const isBlockStart = /^[::?]/.test(text) || text.startsWith('[branch]') || text.startsWith('->');
+  let prefix = '';
+  let suffix = '';
+  if (isBlockStart && currentLine.trim() !== '') prefix = '\n';
+  if (isBlockStart && after.length > 0 && !after.startsWith('\n')) suffix = '\n';
+
+  const insertion = prefix + text + suffix;
+  editor.value = before + insertion + after;
+
+  let cursorPos;
+  if (placeholder) {
+    const phIdx = insertion.indexOf(placeholder);
+    if (phIdx >= 0) {
+      cursorPos = start + phIdx;
+      editor.focus();
+      editor.setSelectionRange(cursorPos, cursorPos + placeholder.length);
+    } else {
+      cursorPos = start + insertion.length;
+      editor.focus();
+      editor.setSelectionRange(cursorPos, cursorPos);
+    }
+  } else {
+    cursorPos = start + insertion.length;
+    editor.focus();
+    editor.setSelectionRange(cursorPos, cursorPos);
+  }
+
+  localStorage.setItem('lifeline_editor_script', editor.value);
+  // 插入后立即把新状态记成 undo 点（不防抖，离散操作要立即生效）
+  pushHistory();
+  runParseAndRender();
+}
+
+// 取得已使用过的角色名（用于消息表单的 datalist）
+function getKnownSpeakers() {
+  const { nodes } = parseLifelineScript(editor.value);
+  const speakers = new Set();
+  Object.values(nodes).forEach(n => n.messages.forEach(m => speakers.add(m.speaker)));
+  return Array.from(speakers);
+}
+
+// 取得已使用过的变量名
+function getKnownVars() {
+  const { nodes } = parseLifelineScript(editor.value);
+  const vars = new Set();
+  Object.values(nodes).forEach(n => {
+    n.messages.forEach(m => {
+      if (m.set) Object.keys(m.set).forEach(k => vars.add(k.trim()));
+      let mm; const re = /\{([^}]+)\}/g;
+      while ((mm = re.exec(m.text))) vars.add(mm[1].trim());
+    });
+    const inter = n.interaction;
+    if (!inter) return;
+    if (inter.options) inter.options.forEach(o => {
+      if (o.set) Object.keys(o.set).forEach(k => vars.add(k.trim()));
+      if (o.condition) {
+        const cm = o.condition.match(/^([^\s!=<>]+)/);
+        if (cm) vars.add(cm[1].trim());
+      }
+    });
+    if (inter.routes) inter.routes.forEach(r => {
+      if (r.set) Object.keys(r.set).forEach(k => vars.add(k.trim()));
+      if (r.condition) {
+        const cm = r.condition.match(/^([^\s!=<>]+)/);
+        if (cm) vars.add(cm[1].trim());
+      }
+    });
+    if (inter.rules) inter.rules.forEach(r => {
+      const cm = r.condition.match(/^([^\s!=<>]+)/);
+      if (cm) vars.add(cm[1].trim());
+    });
+  });
+  return Array.from(vars);
+}
+
+// 弹窗组件
+const modalMask = document.getElementById('modal-mask');
+const modalEl = document.getElementById('modal');
+const modalTitle = document.getElementById('modal-title');
+const modalBody = document.getElementById('modal-body');
+const modalOk = document.getElementById('modal-ok');
+const modalCancel = document.getElementById('modal-cancel');
+
+function openModal(title, bodyHTML, onOk) {
+  modalTitle.textContent = title;
+  modalBody.innerHTML = bodyHTML;
+  modalMask.classList.add('show');
+  // 自动聚焦第一个输入框
+  setTimeout(() => {
+    const firstInput = modalBody.querySelector('input, select, textarea');
+    if (firstInput) firstInput.focus();
+  }, 0);
+  modalOk.onclick = () => {
+    const inputs = modalBody.querySelectorAll('input, select, textarea');
+    const data = {};
+    inputs.forEach(inp => { data[inp.name || inp.id] = inp.value; });
+    const result = onOk(data);
+    if (result === false) return; // 阻止关闭
+    closeModal();
+  };
+  modalCancel.onclick = closeModal;
+}
+function closeModal() {
+  modalMask.classList.remove('show');
+  modalBody.innerHTML = '';
+}
+modalMask.addEventListener('click', (e) => { if (e.target === modalMask) closeModal(); });
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    if (modalMask.classList.contains('show')) closeModal();
+    if (helpMask.classList.contains('show')) helpMask.classList.remove('show');
+  }
+});
+
+// 工具栏动作分发
+document.getElementById('toolbar').addEventListener('click', (e) => {
+  const btn = e.target.closest('.tool-btn');
+  if (!btn) return;
+  const act = btn.dataset.act;
+  handleToolAction(act);
+});
+
+function handleToolAction(act) {
+  const knownSpeakers = getKnownSpeakers();
+  const knownVars = getKnownVars();
+  const speakersDatalist = `<datalist id="dl-speakers">${knownSpeakers.map(s => `<option value="${s}">`).join('')}</datalist>`;
+  const varsDatalist = `<datalist id="dl-vars">${knownVars.map(v => `<option value="${v}">`).join('')}</datalist>`;
+
+  switch (act) {
+    case 'node': {
+      openModal('插入节点', `
+        <label>节点名（唯一标识）</label>
+        <input type="text" id="m-node-name" placeholder="例如：开场_冷静" autocomplete="off">
+        <div class="hint">节点名在脚本中必须唯一，建议用"场景_状态"风格命名</div>
+      `, (d) => {
+        const name = (d['m-node-name'] || '').trim();
+        if (!name) return false;
+        insertAtCursor(`:: ${name}\n\n`, null);
+      });
+      break;
+    }
+    case 'message': {
+      openModal('插入消息', `
+        <label>角色名</label>
+        <input type="text" id="m-speaker" list="dl-speakers" placeholder="例如：Alex" autocomplete="off">${speakersDatalist}
+        <label>消息文字（支持 {变量名} 插值）</label>
+        <textarea id="m-text" rows="3" placeholder="例如：信号恢复了…你还在吗？"></textarea>
+      `, (d) => {
+        const speaker = (d['m-speaker'] || '').trim();
+        const text = (d['m-text'] || '').trim();
+        if (!speaker || !text) return false;
+        insertAtCursor(`${speaker}: ${text}\n`, null);
+      });
+      break;
+    }
+    case 'delay': {
+      openModal('插入延迟', `
+        <label>等待时长（角色隔多久才发下一条消息）</label>
+        <div class="row-2">
+          <input type="number" id="m-num" min="1" value="5" autocomplete="off">
+          <select id="m-unit">
+            <option value="s">秒</option>
+            <option value="m" selected>分钟</option>
+            <option value="h">小时</option>
+            <option value="d">天</option>
+          </select>
+        </div>
+        <div class="hint">真实产品里玩家会等到时间到了才收到回复，编辑器预览会压缩到几秒方便测试</div>
+      `, (d) => {
+        const n = (d['m-num'] || '5').trim();
+        const u = d['m-unit'] || 'm';
+        if (!/^\d+$/.test(n)) return false;
+        insertAtCursor(`[delay:${n}${u}]\n`, null);
+      });
+      break;
+    }
+    case 'set': {
+      openModal('插入变量赋值', `
+        <label>变量名</label>
+        <input type="text" id="m-var" list="dl-vars" placeholder="例如：收束率" autocomplete="off">${varsDatalist}
+        <label>操作</label>
+        <select id="m-op">
+          <option value="+">相对增减 (+N / -N)</option>
+          <option value="=">直接赋值 (=N)</option>
+          <option value="bool">布尔值 (true/false)</option>
+        </select>
+        <label>值</label>
+        <input type="text" id="m-val" placeholder="例如：+5" autocomplete="off">
+        <div class="hint">相对增减示例: +5 / -2；直接赋值示例: 10 或 =hello；布尔值: true 或 false</div>
+      `, (d) => {
+        const v = (d['m-var'] || '').trim();
+        const op = d['m-op'];
+        let val = (d['m-val'] || '').trim();
+        if (!v || !val) return false;
+        if (op === '+') {
+          if (!/^[+-]\d+(\.\d+)?$/.test(val)) {
+            if (/^\d+(\.\d+)?$/.test(val)) val = '+' + val;
+            else return false;
+          }
+        } else if (op === '=') {
+          if (!val.startsWith('=')) val = '=' + val;
+        } else if (op === 'bool') {
+          if (val !== 'true' && val !== 'false') return false;
+        }
+        insertAtCursor(`[set ${v}:${val}]\n`, null);
+      });
+      break;
+    }
+    case 'interp': {
+      openModal('插入变量插值', `
+        <label>变量名</label>
+        <input type="text" id="m-var" list="dl-vars" placeholder="例如：收束率" autocomplete="off">${varsDatalist}
+        <div class="hint">会插入 {变量名} 到光标位置，运行时会自动替换成当前变量值</div>
+      `, (d) => {
+        const v = (d['m-var'] || '').trim();
+        if (!v) return false;
+        insertAtCursor(`{${v}}`, null);
+      });
+      break;
+    }
+    case 'if': {
+      openModal('插入条件（用于选项/路由可见性）', `
+        <label>变量名</label>
+        <input type="text" id="m-var" list="dl-vars" placeholder="例如：收束率" autocomplete="off">${varsDatalist}
+        <label>比较运算符</label>
+        <select id="m-op">
+          <option value="==">== (等于)</option>
+          <option value="!=">!= (不等于)</option>
+          <option value=">">> (大于)</option>
+          <option value="<">< (小于)</option>
+          <option value=">=">>= (大于等于)</option>
+          <option value="<="><= (小于等于)</option>
+        </select>
+        <label>值</label>
+        <input type="text" id="m-val" placeholder="例如：80" autocomplete="off">
+        <div class="hint">插入 [if 变量==值] 到光标位置，放在 + 选项 或 ~ 意图 行里使用</div>
+      `, (d) => {
+        const v = (d['m-var'] || '').trim();
+        const op = d['m-op'];
+        const val = (d['m-val'] || '').trim();
+        if (!v || !val) return false;
+        insertAtCursor(` [if ${v} ${op} ${val}]`, null);
+      });
+      break;
+    }
+    case 'choice': {
+      const tpl = `? 提示文字\n  + 选项文案 -> 目标节点\n  + 选项文案 -> 目标节点\n`;
+      insertAtCursor(tpl, '提示文字');
+      break;
+    }
+    case 'freeform': {
+      const tpl = `?? 提示文字\n  system: 角色人设描述\n  ~ 意图1 -> 目标节点\n  ~ 意图2 -> 目标节点\n  fallback -> 兜底节点\n`;
+      insertAtCursor(tpl, '提示文字');
+      break;
+    }
+    case 'branch': {
+      const tpl = `[branch]\n  变量名 >= 值 -> 目标节点\n  default -> 兜底节点\n`;
+      insertAtCursor(tpl, '变量名');
+      break;
+    }
+    case 'next': {
+      insertAtCursor(`-> 目标节点\n`, '目标节点');
+      break;
+    }
+    case 'end': {
+      insertAtCursor(`-> END\n`, null);
+      break;
+    }
+  }
+}
+
+// 语法速查
+const cheatsheet = document.getElementById('cheatsheet');
+document.getElementById('btn-cheatsheet').onclick = (e) => { e.stopPropagation(); cheatsheet.classList.toggle('show'); };
+document.addEventListener('click', (e) => {
+  if (!cheatsheet.contains(e.target) && e.target.id !== 'btn-cheatsheet') {
+    cheatsheet.classList.remove('show');
+  }
+});
+
+// 打开本地 .lifeline 文件
+document.getElementById('btn-load').onclick = () => document.getElementById('file-input').click();
+document.getElementById('file-input').onchange = (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    editor.value = reader.result;
+    localStorage.setItem('lifeline_editor_script', editor.value);
+    // 载入新文件后重置历史栈：之前的 undo 历史无意义
+    undoStack.length = 0;
+    redoStack.length = 0;
+    lastSnapshot = takeSnapshot();
+    updateUndoRedoButtons();
+    runParseAndRender();
+  };
+  reader.readAsText(file);
+  e.target.value = ''; // 允许再次选同一个文件
+};
+
+// 写作说明面板
+const helpMask = document.getElementById('help-mask');
+document.getElementById('btn-help').onclick = () => helpMask.classList.add('show');
+document.getElementById('help-close').onclick = () => helpMask.classList.remove('show');
+helpMask.addEventListener('click', (e) => { if (e.target === helpMask) helpMask.classList.remove('show'); });
+// 首次访问自动弹出写作说明（用户关掉后下次不再弹）
+if (!localStorage.getItem('lifeline_help_seen')) {
+  helpMask.classList.add('show');
+  localStorage.setItem('lifeline_help_seen', '1');
+}
+
+// 保存纯文本
+document.getElementById('btn-save-txt').onclick = () => {
+  const blob = new Blob([editor.value], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'story.lifeline';
+  a.click();
+  URL.revokeObjectURL(url);
+};
+
+// 重置样本（清除 localStorage 缓存）
+document.getElementById('btn-reset').onclick = () => {
+  if (confirm('重置将清除当前编辑内容，恢复为默认样本。确定吗？')) {
+    localStorage.removeItem('lifeline_editor_script');
+    location.reload();
+  }
+};
+
+// 导出可发布 H5
+document.getElementById('btn-export').onclick = () => {
+  const { nodes, errors } = parseLifelineScript(editor.value);
+  const ids = Object.keys(nodes);
+  if (ids.length === 0) { alert('还没有任何节点，无法导出'); return; }
+  const refErrors = validateReferences(nodes);
+  if (refErrors.length > 0) {
+    if (!confirm(`发现 ${refErrors.length} 处引用错误（指向不存在的节点），导出后玩家走到这些位置会看到"信号中断"。是否仍然导出？`)) return;
+  }
+  const startId = ids[0];
+  const titleInput = prompt('给这个游戏起个标题：', '未命名信号');
+  if (titleInput === null) return;
+  const html = buildPreviewHTML(nodes, startId, titleInput || '未命名信号');
+  const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = (titleInput || 'story') + '.html';
+  a.click();
+  URL.revokeObjectURL(url);
+};
+
+// 预览起点下拉框 + 重新开始按钮
+previewStartSelect.addEventListener('change', () => {
+  currentPreviewStart = previewStartSelect.value;
+  const { nodes } = parseLifelineScript(editor.value);
+  renderPreview(nodes, currentPreviewStart);
+});
+btnPreviewRestart.addEventListener('click', () => {
+  const { nodes } = parseLifelineScript(editor.value);
+  renderPreview(nodes, currentPreviewStart || Object.keys(nodes)[0]);
+});
+
+runParseAndRender();
+</script>
+</body>
+</html>
