@@ -1666,7 +1666,7 @@ function simulateVarsToNode(nodes, startId, targetId) {
 
 function updateVarPanelOnCursor() {
   const { nodes } = parseLifelineScript(editor.value);
-  const ids = Object.keys(nodes);
+  const ids = Object.keys(nodes).filter(k => k !== '__meta__');
   if (ids.length === 0) {
     varPanelBody.innerHTML = '<div class="var-empty">先写一个节点 (:: 节点名) 再看变量</div>';
     return;
@@ -2076,7 +2076,7 @@ document.getElementById('btn-reset').onclick = () => {
 // 导出可发布 H5
 document.getElementById('btn-export').onclick = () => {
   const { nodes, errors } = parseLifelineScript(editor.value);
-  const ids = Object.keys(nodes);
+  const ids = Object.keys(nodes).filter(k => k !== '__meta__');
   if (ids.length === 0) { alert('还没有任何节点，无法导出'); return; }
   const refErrors = validateReferences(nodes);
   if (refErrors.length > 0) {
@@ -2103,7 +2103,7 @@ previewStartSelect.addEventListener('change', () => {
 });
 btnPreviewRestart.addEventListener('click', () => {
   const { nodes } = parseLifelineScript(editor.value);
-  renderPreview(nodes, currentPreviewStart || Object.keys(nodes)[0]);
+  renderPreview(nodes, currentPreviewStart || Object.keys(nodes).filter(k => k !== '__meta__')[0]);
 });
 
 runParseAndRender();
